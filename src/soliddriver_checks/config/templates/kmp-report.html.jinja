@@ -1,168 +1,1154 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kernel Module Packages Check Report</title>
-    <style>body {
-            font-family: 'Poppins';
-            font-size: 18px;
-            background-color: #EFEFEF;
-         }
-         table, th, td{
-            font-family: 'Poppins';
-            font-size: 12px;
-            border: 1px solid #30BA78;
-            border-collapse: collapse;
-            width: 90%;
-            table-layout: fixed;
-         }
-         .table_center{
-            margin-left: auto;
-            margin-right: auto;
-         }
-         th{
-            font-family: 'Poppins Medium';
-            background-color: #30BA78;
-         }
-         th.summary_vendor{
-            width:240px;
-         }
-        th.detail_rpm{
-          width:auto;
-        }
-        th.detail_kernel_module{
-          width:auto;
-          background-color:#90EBCD;
-        }
-        th.detail_0{
-             width:120px;
-         }
-         th.detail_1{
-             width:320px;
-         }
-         th.detail_2{
-          width:80px;
-         }
-         th.detail_3{
-          width:160px;
-         }
-         th.detail_4{
-          width:80px;
-         }
-         th.detail_5{
-          width:40px;
-         }
-         th.detail_6{
-           width:240px;
-          background-color:#90EBCD;
-         }
-         th.detail_7{
-           width:240px;
-          background-color:#90EBCD;
-         }
-         th.detail_8{
-            width:240px;
-           background-color:#90EBCD;
-          }
-         td{
-            text-align:left;
-            vertical-align: top;
-         }
-         td.detail_pass{
-            text-align: center;
-            vertical-align: middle; 
-         }
-         td.summary_number{
-            text-align: center;
-            vertical-align: middle;
-         }
-         td.summary_total{
-            text-align: right;
-            vertical-align: middle;
-         }
-         .supported_border{
-            border:none;
-         }
-         .summary_table {
-            width: 60%;
-            margin-left: auto;
-            margin-right: auto;
-         }
-         td.summary{
-            text-align: center;
-            vertical-align: middle;
-         }
-         tr.critical_failed_row{
-            border: 2px solid #C5161F;
-         }
-         tr.important_failed_row{
-            border: 2px solid #FF9E02;
-         }
-         td.critical_failed{
-            color: white;
-            background-color: #C5161F;
-         }
-         td.important_failed{
-            background-color: #FF9E02;
-         }
-         tr.summary_great_row{
-            background-color: #90EBCD;
-         }
-         td.warning_row_border{
-            border: 2px solid #FE7C3F
-         }
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+      /* ==================== CSS Variables for Theming ==================== */
+      :root {
+        --primary-green: #30BA78;
+        --light-green: #90EBCD;
+        --pass-green: #4CAF50;
+        --warning-orange: #FF9E02;
+        --error-red: #C5161F;
+        --bg-light: #FAFAFA;
+        --bg-card: #FFFFFF;
+        --text-primary: #212121;
+        --text-secondary: #757575;
+        --border-color: #E0E0E0;
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
+        --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+        --font-main: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        --font-mono: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+      }
 
-         .tooltip {
-            position: relative;
-          }
-  
-         .tooltip .tooltiptext {
-            visibility: hidden;
-            width: 180px;
-            background-color: #555;
-            color: #fff;
-            text-align: center;
-            border-radius: 6px;
-            padding: 5px 0;
-            position: absolute;
-            z-index: 1;
-            bottom: 125%;
-            left: 50%;
-            margin-left: -60px;
-            opacity: 0;
-            transition: opacity 0.3s;
-          }
-          
-          .tooltiptext::after {
-            content: "";
-            position: absolute;
-            top: 100%;
-            left: 50%;
-            margin-left: -5px;
-            border-width: 5px;
-            border-style: solid;
-            border-color: #555 transparent transparent transparent;
-          }
-  
-          .tooltip:hover .tooltiptext {
-            visibility: visible;
-            opacity: 1;
-          }
+      /* Dark mode colors */
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-light: #121212;
+          --bg-card: #1E1E1E;
+          --text-primary: #E0E0E0;
+          --text-secondary: #B0B0B0;
+          --border-color: #333333;
+          --primary-green: #4CAF50;
+          --light-green: #66BB6A;
+          --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+          --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
+        }
+      }
+
+      [data-theme="dark"] {
+        --bg-light: #121212;
+        --bg-card: #1E1E1E;
+        --text-primary: #E0E0E0;
+        --text-secondary: #B0B0B0;
+        --border-color: #333333;
+        --primary-green: #4CAF50;
+        --light-green: #66BB6A;
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+        --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
+      }
+
+      /* ==================== Base Styles ==================== */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: var(--font-main);
+        font-size: 16px;
+        line-height: 1.6;
+        background-color: var(--bg-light);
+        color: var(--text-primary);
+        padding: 20px;
+        transition: background-color 0.3s, color 0.3s;
+      }
+
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      /* ==================== Header ==================== */
+      .header {
+        background: linear-gradient(135deg, var(--primary-green) 0%, #28a869 100%);
+        color: white;
+        padding: 32px;
+        border-radius: 12px;
+        margin-bottom: 24px;
+        box-shadow: var(--shadow-md);
+      }
+
+      .header h1 {
+        font-size: 32px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        text-align: center;
+      }
+
+      .header p {
+        font-size: 14px;
+        text-align: center;
+        opacity: 0.95;
+        max-width: 800px;
+        margin: 0 auto;
+      }
+
+      .header a {
+        color: white;
+        text-decoration: underline;
+      }
+
+      /* ==================== Toolbar ==================== */
+      .toolbar {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 24px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .search-box {
+        flex: 1;
+        min-width: 250px;
+        position: relative;
+      }
+
+      .search-box input {
+        width: 100%;
+        padding: 10px 40px 10px 16px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 14px;
+        font-family: var(--font-main);
+        background: var(--bg-light);
+        color: var(--text-primary);
+        transition: border-color 0.2s;
+      }
+
+      .search-box input:focus {
+        outline: none;
+        border-color: var(--primary-green);
+      }
+
+      .search-box::after {
+        content: "🔍";
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+      }
+
+      .filter-buttons {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        padding: 8px 16px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: var(--bg-card);
+        color: var(--text-primary);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+
+      .btn:hover {
+        background: var(--bg-light);
+      }
+
+      .btn.active {
+        background: var(--primary-green);
+        color: white;
+        border-color: var(--primary-green);
+      }
+
+      .btn-pass.active {
+        background: var(--pass-green);
+        border-color: var(--pass-green);
+      }
+
+      .btn-warning.active {
+        background: var(--warning-orange);
+        border-color: var(--warning-orange);
+      }
+
+      .btn-error.active {
+        background: var(--error-red);
+        border-color: var(--error-red);
+      }
+
+      .btn-icon {
+        padding: 8px 12px;
+        font-size: 18px;
+      }
+
+      /* ==================== Stats Cards ==================== */
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .stat-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: var(--shadow-sm);
+        transition: transform 0.2s;
+      }
+
+      .stat-card:hover {
+        transform: translateY(-2px);
+      }
+
+      .stat-card h3 {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .stat-card .value {
+        font-size: 36px;
+        font-weight: 700;
+        line-height: 1;
+        margin-bottom: 4px;
+      }
+
+      .stat-card .label {
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+
+      .stat-card.pass .value { color: var(--pass-green); }
+      .stat-card.warning .value { color: var(--warning-orange); }
+      .stat-card.error .value { color: var(--error-red); }
+
+      /* ==================== Charts ==================== */
+      .charts-container {
+        display: grid;
+        grid-template-columns: 1fr 2fr;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+
+      .chart-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 24px;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .chart-card h3 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 16px;
+      }
+
+      @media (max-width: 900px) {
+        .charts-container {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* ==================== Tables ==================== */
+      .table-container {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 24px;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .table-header {
+        background: var(--primary-green);
+        color: white;
+        padding: 16px 24px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      .table-wrapper {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        table-layout: fixed;
+      }
+
+      /* Force table rows to display as rows */
+      table tr {
+        display: table-row !important;
+      }
+
+      th {
+        padding: 12px 10px;
+        text-align: center;
+        font-weight: 600;
+        background: var(--primary-green);
+        color: white;
+        border: 1px solid rgba(255,255,255,0.2);
+        white-space: nowrap;
+        user-select: none;
+        vertical-align: middle;
+        display: table-cell !important;
+      }
+
+      /* Second row headers are sortable and left-aligned */
+      table tr:nth-child(2) th {
+        text-align: left;
+        cursor: pointer;
+      }
+
+      table tr:nth-child(2) th:hover {
+        background: #28a869;
+      }
+
+      th.sortable::after {
+        content: " ↕";
+        opacity: 0.5;
+        font-size: 11px;
+      }
+
+      th.sorted-asc::after {
+        content: " ▲";
+        opacity: 1;
+      }
+
+      th.sorted-desc::after {
+        content: " ▼";
+        opacity: 1;
+      }
+
+      th.km-check {
+        background: var(--light-green) !important;
+        color: var(--text-primary) !important;
+      }
+
+      /* First row header cells (category headers) */
+      th.detail_rpm,
+      th.detail_kernel_module {
+        font-size: 14px;
+        font-weight: 700;
+        padding: 14px 10px;
+      }
+
+      /* Column widths - CRITICAL for proper table layout */
+      th.detail_0 { width: 120px; }
+      th.detail_1 { width: 320px; }
+      th.detail_2 { width: 80px; }
+      th.detail_3 { width: 160px; }
+      th.detail_4 { width: 80px; }
+      th.detail_5 { width: 100px; }
+      th.detail_6 { width: 180px; }
+      th.detail_7 { width: 120px; }
+      th.detail_8 { width: 140px; }
+      th.detail_9 { width: 180px; }
+      th.detail_10 { width: 120px; }
+
+      td {
+        padding: 12px;
+        border-bottom: 1px solid var(--border-color);
+        vertical-align: top;
+      }
+
+      tbody tr {
+        transition: background-color 0.15s;
+      }
+
+      tbody tr:hover {
+        background: var(--bg-light);
+      }
+
+      tbody tr.hidden {
+        display: none;
+      }
+
+      /* Cell-level status indicators */
+      td.status-pass {
+        background: rgba(76, 175, 80, 0.1);
+        color: #2e7d32;
+        font-weight: 500;
+      }
+
+      td.status-warning {
+        background: rgba(255, 158, 2, 0.15);
+        color: #e65100;
+        font-weight: 500;
+      }
+
+      td.status-error {
+        background: rgba(197, 22, 31, 0.15);
+        color: #b71c1c;
+        font-weight: 600;
+      }
+
+      [data-theme="dark"] td.status-pass {
+        background: rgba(76, 175, 80, 0.2);
+        color: #81c784;
+      }
+
+      [data-theme="dark"] td.status-warning {
+        background: rgba(255, 158, 2, 0.2);
+        color: #ffb74d;
+      }
+
+      [data-theme="dark"] td.status-error {
+        background: rgba(197, 22, 31, 0.25);
+        color: #ef5350;
+      }
+
+      /* Mono font for paths and module names */
+      td.mono {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        word-break: break-all;
+      }
+
+      /* Expandable content */
+      .expandable {
+        cursor: pointer;
+        position: relative;
+      }
+
+      .expandable-trigger {
+        color: var(--primary-green);
+        text-decoration: underline;
+        cursor: pointer;
+        font-weight: 500;
+        display: inline-block;
+        margin-left: 4px;
+      }
+
+      .expandable-trigger:hover {
+        color: #28a869;
+      }
+
+      .expandable-content {
+        display: none;
+        margin-top: 8px;
+        padding: 12px;
+        background: var(--bg-light);
+        border-radius: 4px;
+        border-left: 3px solid var(--primary-green);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      .expandable-content.expanded {
+        display: block;
+      }
+
+      .expandable-content pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      /* Status badge */
+      .badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .badge-pass {
+        background: var(--pass-green);
+        color: white;
+      }
+
+      .badge-warning {
+        background: var(--warning-orange);
+        color: white;
+      }
+
+      .badge-error {
+        background: var(--error-red);
+        color: white;
+      }
+
+      /* Tooltip */
+      .tooltip {
+        position: relative;
+        display: inline-block;
+        cursor: help;
+      }
+
+      .tooltip .tooltiptext {
+        visibility: hidden;
+        width: 220px;
+        background-color: #555;
+        color: #fff;
+        text-align: center;
+        border-radius: 6px;
+        padding: 8px;
+        position: absolute;
+        z-index: 100;
+        bottom: 125%;
+        left: 50%;
+        margin-left: -110px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .tooltip .tooltiptext::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -5px;
+        border-width: 5px;
+        border-style: solid;
+        border-color: #555 transparent transparent transparent;
+      }
+
+      .tooltip:hover .tooltiptext {
+        visibility: visible;
+        opacity: 1;
+      }
+
+      /* Export buttons */
+      .export-buttons {
+        display: flex;
+        gap: 8px;
+      }
+
+      /* No results message */
+      .no-results {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-secondary);
+        font-size: 14px;
+      }
+
+      /* Print styles */
+      @media print {
+        body {
+          background: white;
+          color: black;
+        }
+        .toolbar, .btn, .export-buttons {
+          display: none;
+        }
+        .table-container {
+          box-shadow: none;
+          border: 1px solid #ccc;
+        }
+      }
+
+      /* Accessibility - focus indicators */
+      *:focus-visible {
+        outline: 2px solid var(--primary-green);
+        outline-offset: 2px;
+      }
+
+      /* Loading state */
+      .loading {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--border-color);
+        border-top-color: var(--primary-green);
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      /* Version info */
+      .version-info {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 12px 20px;
+        margin-bottom: 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 13px;
+      }
+
+      .version-info strong {
+        color: var(--primary-green);
+      }
     </style>
   </head>
   <body>
-   <div><div style="background-color:#30BA78">
-      <h3 style="text-align: center; font-size:x-large;">Kernel Module Packages Check Report</h3>
-    </div>
-    <p style="font-size:small;"><strong>soliddriver-checks</strong> is a tool for parnter and customer to check their <strong>KMPs(Kernel Module Packages)</strong> or <strong>installed/running kernel modules</strong> whether can meet basic SUSE requirements. More information can be found <a href="https://github.com/SUSE/soliddriver-checks" style="background-color: #30BA78;">here</a></p>
-    <p style="font-size:small;text-align:center">{{version}}  {{timestamp}}</p>
-    <div>
-      <p style="text-align: center; font-size:large;background-color: #30BA78;">Summary of the result from vendor perspective: </p>
-    </div>
-    {{summary_table}}
-    <div>
-        <p style="text-align: center; font-size:large;background-color: #30BA78;">Check result in details: </p>
+    <div class="container">
+      <!-- Header -->
+      <div class="header">
+        <h1>Kernel Module Packages Check Report</h1>
+        <p>
+          <strong>soliddriver-checks</strong> validates KMPs (Kernel Module Packages) and kernel modules against SUSE requirements.
+          <a href="https://github.com/SUSE/soliddriver-checks" target="_blank">Learn more</a>
+        </p>
       </div>
-      {{rpm_details}}
-    </body>
-    </html>
 
+      <!-- Version Info -->
+      <div class="version-info">
+        <div><strong>Version:</strong> {{version}}</div>
+        <div><strong>Generated:</strong> {{timestamp}}</div>
+        <div class="export-buttons">
+          <button class="btn btn-icon" onclick="toggleTheme()" title="Toggle dark mode">🌓</button>
+          <button class="btn" onclick="exportToJSON()">📥 Export JSON</button>
+          <button class="btn" onclick="copyResults()">📋 Copy Results</button>
+          <button class="btn" onclick="window.print()">🖨️ Print</button>
+        </div>
+      </div>
+
+      <!-- Stats Cards -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <h3>Total Packages</h3>
+          <div class="value" id="total-count">-</div>
+          <div class="label">Checked</div>
+        </div>
+        <div class="stat-card pass">
+          <h3>Pass</h3>
+          <div class="value" id="pass-count">-</div>
+          <div class="label">All checks passed</div>
+        </div>
+        <div class="stat-card warning">
+          <h3>Warning</h3>
+          <div class="value" id="warning-count">-</div>
+          <div class="label">Minor issues</div>
+        </div>
+        <div class="stat-card error">
+          <h3>Error</h3>
+          <div class="value" id="error-count">-</div>
+          <div class="label">Critical failures</div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts-container">
+        <div class="chart-card">
+          <h3>Results Distribution</h3>
+          <canvas id="pieChart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Results by Vendor</h3>
+          <canvas id="barChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <div class="search-box">
+          <input
+            type="text"
+            id="searchInput"
+            placeholder="Search by package name, vendor, or path..."
+            aria-label="Search packages"
+          />
+        </div>
+        <div class="filter-buttons">
+          <button class="btn btn-pass" onclick="toggleFilter('pass')" data-filter="pass">
+            ✓ PASS Only
+          </button>
+          <button class="btn btn-warning" onclick="toggleFilter('warning')" data-filter="warning">
+            ⚠ WARNING Only
+          </button>
+          <button class="btn btn-error" onclick="toggleFilter('error')" data-filter="error">
+            ✗ ERROR Only
+          </button>
+          <button class="btn" onclick="resetFilters()">
+            🔄 Reset
+          </button>
+        </div>
+      </div>
+
+      <!-- Summary Table -->
+      <div class="table-container">
+        <div class="table-header">Summary by Vendor</div>
+        <div class="table-wrapper">
+          {{summary_table}}
+        </div>
+      </div>
+
+      <!-- Detail Table -->
+      <div class="table-container">
+        <div class="table-header">
+          Detailed Results
+          <span id="filter-status" style="font-size: 14px; font-weight: normal; margin-left: 12px;"></span>
+        </div>
+        <div class="table-wrapper">
+          {{rpm_details}}
+        </div>
+        <div id="no-results" class="no-results" style="display: none;">
+          No packages match the current filters
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // ==================== Data Storage ====================
+      let allData = [];
+      let currentFilters = new Set();
+      let sortState = { column: null, direction: 'asc' };
+
+      // ==================== Theme Toggle ====================
+      function toggleTheme() {
+        const html = document.documentElement;
+        const currentTheme = html.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+
+        // Recreate charts with new theme
+        setTimeout(() => {
+          initCharts();
+        }, 100);
+      }
+
+      // Load saved theme
+      const savedTheme = localStorage.getItem('theme') ||
+                        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', savedTheme);
+
+      // ==================== Initialize ====================
+      document.addEventListener('DOMContentLoaded', function() {
+        initializeData();
+        initCharts();
+        setupSearch();
+        setupExpandables();
+        setupTableSorting();
+        updateStats();
+
+        // Keyboard navigation
+        document.addEventListener('keydown', handleKeyboardNav);
+      });
+
+      function initializeData() {
+        const detailTable = document.querySelector('table.table_center');
+        if (!detailTable) return;
+
+        const rows = detailTable.querySelectorAll('tbody tr');
+        rows.forEach((row, index) => {
+          let status = 'pass';
+          if (row.classList.contains('critical_failed_row')) status = 'error';
+          else if (row.classList.contains('important_failed_row')) status = 'warning';
+
+          row.setAttribute('data-status', status);
+          row.setAttribute('data-index', index);
+
+          // Extract text content for searching
+          const cells = row.querySelectorAll('td');
+          const searchText = Array.from(cells).map(cell => cell.textContent.toLowerCase()).join(' ');
+          row.setAttribute('data-search', searchText);
+        });
+      }
+
+      // ==================== Stats Update ====================
+      function updateStats() {
+        const detailTable = document.querySelector('table.table_center');
+        if (!detailTable) return;
+
+        const rows = detailTable.querySelectorAll('tbody tr');
+        let total = rows.length;
+        let pass = 0, warning = 0, error = 0;
+
+        rows.forEach(row => {
+          const status = row.getAttribute('data-status');
+          if (status === 'pass') pass++;
+          else if (status === 'warning') warning++;
+          else if (status === 'error') error++;
+        });
+
+        document.getElementById('total-count').textContent = total;
+        document.getElementById('pass-count').textContent = pass;
+        document.getElementById('warning-count').textContent = warning;
+        document.getElementById('error-count').textContent = error;
+
+        return { total, pass, warning, error };
+      }
+
+      // ==================== Charts ====================
+      let pieChart, barChart;
+
+      function initCharts() {
+        const stats = updateStats();
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const textColor = isDark ? '#E0E0E0' : '#212121';
+        const gridColor = isDark ? '#333333' : '#E0E0E0';
+
+        // Destroy existing charts
+        if (pieChart) pieChart.destroy();
+        if (barChart) barChart.destroy();
+
+        // Pie Chart
+        const pieCtx = document.getElementById('pieChart');
+        pieChart = new Chart(pieCtx, {
+          type: 'doughnut',
+          data: {
+            labels: ['PASS', 'WARNING', 'ERROR'],
+            datasets: [{
+              data: [stats.pass, stats.warning, stats.error],
+              backgroundColor: ['#4CAF50', '#FF9E02', '#C5161F'],
+              borderColor: isDark ? '#1E1E1E' : '#FFFFFF',
+              borderWidth: 2
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: {
+                  color: textColor,
+                  font: { size: 12, family: 'system-ui' },
+                  padding: 12,
+                  usePointStyle: true
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const label = context.label || '';
+                    const value = context.parsed || 0;
+                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                    return label + ': ' + value + ' (' + percentage + '%)';
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        // Bar Chart by Vendor
+        const vendorData = getVendorData();
+        const barCtx = document.getElementById('barChart');
+        barChart = new Chart(barCtx, {
+          type: 'bar',
+          data: {
+            labels: vendorData.labels,
+            datasets: [
+              {
+                label: 'PASS',
+                data: vendorData.pass,
+                backgroundColor: '#4CAF50'
+              },
+              {
+                label: 'WARNING',
+                data: vendorData.warning,
+                backgroundColor: '#FF9E02'
+              },
+              {
+                label: 'ERROR',
+                data: vendorData.error,
+                backgroundColor: '#C5161F'
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            scales: {
+              x: {
+                stacked: true,
+                ticks: { color: textColor },
+                grid: { color: gridColor }
+              },
+              y: {
+                stacked: true,
+                ticks: { color: textColor, precision: 0 },
+                grid: { color: gridColor }
+              }
+            },
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: {
+                  color: textColor,
+                  font: { size: 12 },
+                  usePointStyle: true
+                }
+              }
+            }
+          }
+        });
+      }
+
+      function getVendorData() {
+        const detailTable = document.querySelector('table.table_center');
+        if (!detailTable) return { labels: [], pass: [], warning: [], error: [] };
+
+        const vendors = {};
+        const rows = detailTable.querySelectorAll('tbody tr');
+
+        rows.forEach(row => {
+          const vendorCell = row.cells[2]; // Vendor column
+          const vendor = vendorCell ? vendorCell.textContent.trim() : 'Unknown';
+          const status = row.getAttribute('data-status');
+
+          if (!vendors[vendor]) {
+            vendors[vendor] = { pass: 0, warning: 0, error: 0 };
+          }
+          vendors[vendor][status]++;
+        });
+
+        const labels = Object.keys(vendors);
+        return {
+          labels: labels,
+          pass: labels.map(v => vendors[v].pass),
+          warning: labels.map(v => vendors[v].warning),
+          error: labels.map(v => vendors[v].error)
+        };
+      }
+
+      // ==================== Search & Filter ====================
+      function setupSearch() {
+        const searchInput = document.getElementById('searchInput');
+        searchInput.addEventListener('input', debounce(applyFilters, 300));
+      }
+
+      function toggleFilter(type) {
+        const btn = document.querySelector(`[data-filter="${type}"]`);
+
+        if (currentFilters.has(type)) {
+          currentFilters.delete(type);
+          btn.classList.remove('active');
+        } else {
+          currentFilters.clear();
+          document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+          currentFilters.add(type);
+          btn.classList.add('active');
+        }
+
+        applyFilters();
+      }
+
+      function resetFilters() {
+        currentFilters.clear();
+        document.querySelectorAll('[data-filter]').forEach(btn => btn.classList.remove('active'));
+        document.getElementById('searchInput').value = '';
+        applyFilters();
+      }
+
+      function applyFilters() {
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        const detailTable = document.querySelector('table.table_center');
+        if (!detailTable) return;
+
+        const rows = detailTable.querySelectorAll('tbody tr');
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+          const status = row.getAttribute('data-status');
+          const searchText = row.getAttribute('data-search');
+
+          let passStatusFilter = currentFilters.size === 0 || currentFilters.has(status);
+          let passSearchFilter = !searchTerm || searchText.includes(searchTerm);
+
+          if (passStatusFilter && passSearchFilter) {
+            row.classList.remove('hidden');
+            visibleCount++;
+          } else {
+            row.classList.add('hidden');
+          }
+        });
+
+        // Update filter status
+        const filterStatus = document.getElementById('filter-status');
+        if (visibleCount < rows.length) {
+          filterStatus.textContent = `Showing ${visibleCount} of ${rows.length} packages`;
+        } else {
+          filterStatus.textContent = '';
+        }
+
+        // Show/hide no results message
+        const noResults = document.getElementById('no-results');
+        noResults.style.display = visibleCount === 0 ? 'block' : 'none';
+      }
+
+      // ==================== Expandable Content ====================
+      function setupExpandables() {
+        document.querySelectorAll('.expandable').forEach(el => {
+          el.addEventListener('click', function(e) {
+            if (e.target.classList.contains('expandable-trigger')) {
+              const content = this.querySelector('.expandable-content');
+              content.classList.toggle('expanded');
+              e.target.textContent = content.classList.contains('expanded') ? 'Show less' : 'Show more';
+            }
+          });
+        });
+      }
+
+      // ==================== Table Sorting ====================
+      function setupTableSorting() {
+        // Get all sortable headers and attach click handlers
+        const table = document.querySelector('table.table_center');
+        if (!table) return;
+
+        // The sortable headers are in the second row (index 1)
+        const headerRow = table.rows[1];
+        if (!headerRow) return;
+
+        Array.from(headerRow.cells).forEach((th, index) => {
+          if (th.classList.contains('sortable')) {
+            th.addEventListener('click', () => sortTable(index, th));
+          }
+        });
+      }
+
+      function sortTable(columnIndex, headerEl) {
+        const table = headerEl.closest('table');
+
+        // Get all data rows (skip first 2 header rows)
+        const allRows = Array.from(table.rows);
+        const dataRows = allRows.slice(2); // Skip both header rows
+
+        // Filter out hidden rows for sorting
+        const visibleRows = dataRows.filter(row => !row.classList.contains('hidden'));
+
+        // Determine sort direction
+        const currentSortKey = `${columnIndex}`;
+        if (sortState.column === currentSortKey) {
+          sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortState.column = currentSortKey;
+          sortState.direction = 'asc';
+        }
+
+        // Update header indicators
+        table.querySelectorAll('th.sortable').forEach(th => {
+          th.classList.remove('sorted-asc', 'sorted-desc');
+        });
+        headerEl.classList.add(sortState.direction === 'asc' ? 'sorted-asc' : 'sorted-desc');
+
+        // Sort rows
+        const sortedRows = visibleRows.sort((a, b) => {
+          const aText = a.cells[columnIndex] ? a.cells[columnIndex].textContent.trim() : '';
+          const bText = b.cells[columnIndex] ? b.cells[columnIndex].textContent.trim() : '';
+
+          const comparison = aText.localeCompare(bText, undefined, { numeric: true });
+          return sortState.direction === 'asc' ? comparison : -comparison;
+        });
+
+        // Get hidden rows
+        const hiddenRows = dataRows.filter(row => row.classList.contains('hidden'));
+
+        // Reorder DOM: header rows first, then sorted visible rows, then hidden rows
+        const headerRows = allRows.slice(0, 2);
+
+        // Clear table except headers
+        while (table.rows.length > 2) {
+          table.deleteRow(2);
+        }
+
+        // Append sorted visible rows
+        sortedRows.forEach(row => table.appendChild(row));
+
+        // Append hidden rows
+        hiddenRows.forEach(row => table.appendChild(row));
+      }
+
+      // ==================== Export Functions ====================
+      function exportToJSON() {
+        const detailTable = document.querySelector('table.table_center');
+        if (!detailTable) return;
+
+        const headers = Array.from(detailTable.querySelectorAll('thead th')).map(th => th.textContent.trim());
+        const rows = Array.from(detailTable.querySelectorAll('tbody tr'));
+
+        const data = rows.map(row => {
+          const cells = Array.from(row.cells);
+          const obj = {};
+          cells.forEach((cell, i) => {
+            obj[headers[i]] = cell.textContent.trim();
+          });
+          obj.status = row.getAttribute('data-status');
+          return obj;
+        });
+
+        const jsonStr = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'kmp-check-results.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function copyResults() {
+        const detailTable = document.querySelector('table.table_center');
+        if (!detailTable) return;
+
+        const stats = updateStats();
+        const summary = `KMP Check Results
+Total: ${stats.total}
+PASS: ${stats.pass}
+WARNING: ${stats.warning}
+ERROR: ${stats.error}
+Generated: {{timestamp}}`;
+
+        navigator.clipboard.writeText(summary).then(() => {
+          alert('Results copied to clipboard!');
+        });
+      }
+
+      // ==================== Keyboard Navigation ====================
+      function handleKeyboardNav(e) {
+        // Ctrl/Cmd + F for search
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+          e.preventDefault();
+          document.getElementById('searchInput').focus();
+        }
+
+        // Escape to clear search
+        if (e.key === 'Escape') {
+          resetFilters();
+        }
+      }
+
+      // ==================== Utility ====================
+      function debounce(func, wait) {
+        let timeout;
+        return function(...args) {
+          clearTimeout(timeout);
+          timeout = setTimeout(() => func.apply(this, args), wait);
+        };
+      }
+    </script>
+  </body>
+</html>
