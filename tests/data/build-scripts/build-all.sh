@@ -7,7 +7,11 @@ echo "============================================"
 
 SCRIPT_DIR="$(dirname "$0")"
 
-# Build each test package
+# Build valid package (PASS)
+"$SCRIPT_DIR/build-acme-network.sh"
+echo ""
+
+# Build license test packages (ERROR/WARNING)
 "$SCRIPT_DIR/build-proprietary.sh"
 echo ""
 "$SCRIPT_DIR/build-unknown.sh"
@@ -19,4 +23,4 @@ echo "============================================"
 echo "✓ All test packages built successfully"
 echo "============================================"
 echo ""
-ls -lh "$SCRIPT_DIR/../"*.rpm 2>/dev/null | grep license-test || echo "No RPMs found"
+ls -lh "$SCRIPT_DIR/../"*.rpm 2>/dev/null | grep -E "(acme|license-test)" || echo "No test RPMs found"

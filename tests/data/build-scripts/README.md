@@ -34,6 +34,11 @@ Output: `tests/data/*.rpm`
 
 ### Individual Builds
 
+**Valid Package (PASS):**
+```bash
+./build-acme-network.sh
+```
+
 **Proprietary License Test:**
 ```bash
 ./build-proprietary.sh
@@ -53,6 +58,7 @@ Output: `tests/data/*.rpm`
 
 | RPM | Purpose | Expected Result |
 |-----|---------|-----------------|
+| `acme-network-kmp-*.rpm` | Valid package with all checks passing | PASS: All validations pass |
 | `license-test-proprietary-kmp-*.rpm` | MODULE_LICENSE("Proprietary") | ERROR: Non-GPL license |
 | `license-test-unknown-kmp-*.rpm` | MODULE_LICENSE("Unknown") | ERROR: Unknown license |
 | `license-test-nosupported-kmp-*.rpm` | GPL but no MODULE_INFO(supported) | WARNING: Missing supported flag |
@@ -61,20 +67,25 @@ Output: `tests/data/*.rpm`
 
 ```
 build-scripts/
-├── README.md              # This file
-├── build-all.sh           # Build all test RPMs
-├── build-proprietary.sh   # Build proprietary license test
-├── build-unknown.sh       # Build unknown license test
-├── build-nosupported.sh   # Build no-supported-flag test
-├── proprietary/           # Source for proprietary test
+├── README.md                # This file
+├── build-all.sh             # Build all test RPMs
+├── build-acme-network.sh    # Build valid PASS test
+├── build-proprietary.sh     # Build proprietary license test
+├── build-unknown.sh         # Build unknown license test
+├── build-nosupported.sh     # Build no-supported-flag test
+├── acme-network/            # Source for valid PASS test
 │   ├── module.c
 │   ├── Makefile
 │   └── kmp.spec
-├── unknown/               # Source for unknown license test
+├── proprietary/             # Source for proprietary test
 │   ├── module.c
 │   ├── Makefile
 │   └── kmp.spec
-└── nosupported/           # Source for no-supported-flag test
+├── unknown/                 # Source for unknown license test
+│   ├── module.c
+│   ├── Makefile
+│   └── kmp.spec
+└── nosupported/             # Source for no-supported-flag test
     ├── module.c
     ├── Makefile
     └── kmp.spec
