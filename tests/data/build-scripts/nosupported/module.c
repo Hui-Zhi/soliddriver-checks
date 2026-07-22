@@ -7,7 +7,7 @@
 #include <linux/init.h>
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("SUSE Test");
+MODULE_AUTHOR("ACME Corporation Test Team");
 MODULE_DESCRIPTION("Test module with GPL but no supported flag");
 MODULE_VERSION("1.0");
 /* Intentionally missing: MODULE_INFO(supported, "yes") or MODULE_INFO(supported, "external") */

@@ -4,17 +4,17 @@ This directory contains test KMP packages for validating soliddriver-checks.
 
 ## Test Packages
 
-### Real SUSE SolidDriver Packages (10 packages)
+### Example Production Packages (Optional)
 
-These should be obtained from real SUSE SolidDriver certified vendors:
-- `broadcom-bnxt_en-kmp-default-*.rpm` (2 versions)
-- `broadcom-tg3-kmp-default-*.rpm` (2 versions)
-- `elx-lpfc-kmp-default-*.rpm`
-- `intel-i40e-kmp-default-*.rpm`
-- `intel-ice-kmp-default-*.rpm`
-- `intel-ixgbe-kmp-default-*.rpm`
-- `mlnx-en-kmp-default-*.rpm`
-- `suse-hello-kmp-default-*.rpm`
+For comprehensive testing, you can use real SUSE SolidDriver certified KMP packages.
+These are **not included** in the repository and must be obtained separately.
+
+Examples of real-world packages (for reference only):
+- Network driver KMPs from certified vendors
+- Storage driver KMPs from certified vendors
+- Other certified SolidDriver packages
+
+The custom test packages below are sufficient for basic validation testing.
 
 ### Custom Test Packages (3 packages)
 
@@ -59,21 +59,16 @@ soliddriver-checks tests/data -f html -o tests/output/report.html
 
 | Package | Expected Status | Reason |
 |---------|----------------|---------|
-| Intel packages (3) | ✅ PASS | All checks pass |
-| Broadcom lpfc | ⚠️ WARNING | Missing module signature |
-| Other packages (9) | ❌ ERROR | Various validation failures |
 | license-test-proprietary | ❌ ERROR | Non-GPL license |
 | license-test-unknown | ❌ ERROR | Unknown license |
 | license-test-nosupported | ⚠️ WARNING | Missing supported flag |
 
-**Overall distribution:**
-- PASS: 3 packages (23%)
-- WARNING: 1-2 packages (8-15%)
-- ERROR: 9-10 packages (69-77%)
+When testing with production packages, you'll see varied results based on the packages used.
 
 ## Notes
 
-- Real SUSE packages are **not** included in the repository (too large)
-- Obtain them from SUSE partners or SolidDriver certification samples
+- Production KMP packages are **not** included in the repository
+- Use your own KMP packages for comprehensive testing
 - Custom test packages **must be built** on a Linux system with kernel headers
 - Built RPMs are architecture-specific (x86_64, aarch64, etc.)
+- The 3 custom test packages are sufficient for basic validation of soliddriver-checks

@@ -7,7 +7,7 @@
 #include <linux/init.h>
 
 MODULE_LICENSE("Unknown");
-MODULE_AUTHOR("SUSE Test");
+MODULE_AUTHOR("ACME Corporation Test Team");
 MODULE_DESCRIPTION("Test module with unknown license");
 MODULE_VERSION("1.0");
 

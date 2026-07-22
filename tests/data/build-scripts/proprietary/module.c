@@ -7,7 +7,7 @@
 #include <linux/init.h>
 
 MODULE_LICENSE("Proprietary");
-MODULE_AUTHOR("SUSE Test");
+MODULE_AUTHOR("ACME Corporation Test Team");
 MODULE_DESCRIPTION("Test module with proprietary license");
 MODULE_VERSION("1.0");
 

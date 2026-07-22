@@ -104,5 +104,6 @@ The kernel modules are minimal - just enough to test specific validation scenari
 ## Notes
 
 - Built RPMs are architecture-specific (`x86_64`, `aarch64`, etc.)
-- Real SUSE SolidDriver packages should be obtained separately
+- Production KMP packages should be obtained separately for comprehensive testing
 - These are **test packages only** - not for production use
+- These test packages demonstrate specific validation scenarios for soliddriver-checks
