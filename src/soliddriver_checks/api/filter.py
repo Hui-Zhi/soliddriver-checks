@@ -22,6 +22,9 @@ notequal: STRING "!=" STRING
 %ignore WS
 """
 
+# Cache the parser to avoid recreating it on every filter call
+_CACHED_PARSER = Lark(grammar)
+
 
 class KernelModuleListFilter (Transformer):
     def __init__(self):
@@ -57,9 +60,8 @@ def km_filter(filter, data):
     if filter == "":
         return data
 
-    parser = Lark(grammar)
     kmf = KernelModuleListFilter()
-    tree = parser.parse(filter)
+    tree = _CACHED_PARSER.parse(filter)
     kmf.transform(tree)
 
     return KM_filter(kmf.operators, data).process()

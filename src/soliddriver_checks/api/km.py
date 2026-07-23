@@ -1,26 +1,11 @@
 import os
 import pandas as pd
 import json
+from typing import Dict, List, Any
 from ..config import SDCConf
-from enum import Enum, unique
+from .common import Evaluation
 from .utils.cmd import run_cmd
 import requests
-
-
-@unique
-class KMEvaluation(Enum):
-    PASS = 1
-    WARNING = 2
-    ERROR = 3
-
-    def __str__(self):
-        return self.name
-
-    def __int__(self):
-        return self.value
-
-    def to_json(self):
-        return {"level": self.name, "value": self.value}
 
 
 class KMAnalysis:
@@ -60,7 +45,7 @@ class KMAnalysis:
 
             row = pd.Series(
                 {
-                    "level": KMEvaluation(max(row_level)).to_json(),
+                    "level": Evaluation(max(row_level)).to_json(),
                     "modulename": {"level": lev_name, "value": name},
                     "filename": {"level": lev_fn, "value": filename},
                     "license": {"level": lev_lic, "value": license},
@@ -79,22 +64,22 @@ class KMAnalysis:
         return df
 
     def _km_module_name_analysis(self, name):
-        return KMEvaluation.PASS.to_json(), name
+        return Evaluation.PASS.to_json(), name
 
     def _km_filename_analysis(self, filename, wu):
-        lev = KMEvaluation.PASS
+        lev = Evaluation.PASS
         if not filename.startswith("/lib/modules"):
-            lev = KMEvaluation.WARNING
+            lev = Evaluation.WARNING
 
         if wu != 0:  # under weak-updates folder, and have issues.
             if wu == 2 or wu == 3:  # kernel module does not exist or not a link
-                lev = KMEvaluation.ERROR
+                lev = Evaluation.ERROR
 
         return lev.to_json(), filename
 
     def _km_supported_analysis(self, supported):
         sps = supported.splitlines()
-        lev = KMEvaluation.PASS
+        lev = Evaluation.PASS
         # no supported flag or 1 supported flag but the value is not yes(supported by SUSE) or supported (supported by others).
         if len(sps) == 0 or (
             len(sps) == 1
@@ -102,49 +87,49 @@ class KMAnalysis:
             and sps[0] != "no"
             and sps[0] != "external"
         ):
-            lev = KMEvaluation.ERROR
+            lev = Evaluation.ERROR
         elif len(sps) > 1:
-            lev = KMEvaluation.WARNING
+            lev = Evaluation.WARNING
             for v in sps:
                 if v != "yes" and v != "no" and v != "external":
-                    lev = KMEvaluation.ERROR
+                    lev = Evaluation.ERROR
                     break
 
         return lev.to_json(), sps
 
     def _km_license_analysis(self, license):
-        lev = KMEvaluation.PASS
+        lev = Evaluation.PASS
 
         lics = license.split("\n")
         for i in lics:
             if i not in self._valid_licenses:
-                lev = KMEvaluation.WARNING
+                lev = Evaluation.WARNING
                 break
 
         return lev.to_json(), license
 
     def _km_signature_analysis(self, signature):
         if signature != "":
-            return KMEvaluation.PASS.to_json(), "Yes"
+            return Evaluation.PASS.to_json(), "Yes"
         else:
-            return KMEvaluation.WARNING.to_json(), "No"
+            return Evaluation.WARNING.to_json(), "No"
 
     def _km_running_analysis(self, running):
-        return KMEvaluation.PASS.to_json(), running
+        return Evaluation.PASS.to_json(), running
 
     def _km_kmp_analysis(self, kmp):
         if kmp is None:
-            return KMEvaluation.PASS.to_json(), {"name": "", "signature": ""}
+            return Evaluation.PASS.to_json(), {"name": "", "signature": ""}
 
         name = kmp["name"]
         signature = kmp["signature"]
 
         if name.endswith("is not owned by any package"):
-            return KMEvaluation.WARNING.to_json(), "Not owned by any package"
+            return Evaluation.WARNING.to_json(), "Not owned by any package"
         elif signature == "":
-            return KMEvaluation.WARNING.to_json(), name + ": has no signature"
+            return Evaluation.WARNING.to_json(), name + ": has no signature"
 
-        return KMEvaluation.PASS.to_json(), name
+        return Evaluation.PASS.to_json(), name
 
 
 class KMReader:
@@ -172,7 +157,7 @@ class KMReader:
             file for file in running_kms if not file.startswith("modinfo: ERROR:")
         ]
         lm_kms = run_cmd(
-            'find /lib/modules/ -regex ".*\.\(ko\|ko.xz\|ko.zst\)$"'
+            r'find /lib/modules/ -regex ".*\.\(ko\|ko.xz\|ko.zst\)$"'
         ).splitlines()
 
         files = list(set(running_kms + lm_kms))
@@ -241,12 +226,11 @@ class KMReader:
 
     def _get_kmps_signature(self, kmps):
         uniq_kmps = set(kmps)
-        invalid_kmps = []
+        invalid_kmps = set()
         for kmp in uniq_kmps:
             if kmp.endswith("is not owned by any package"):
-                invalid_kmps.append(kmp)
-        for ik in invalid_kmps:
-            uniq_kmps.remove(ik)
+                invalid_kmps.add(kmp)
+        uniq_kmps = uniq_kmps - invalid_kmps
         # example: Signature   : RSA/SHA256, Wed 12 Oct 2022 06:57:49 PM CST, Key ID 70af9e8139db7c82
         signatures = run_cmd(
             f'rpm -q --info {" ".join(uniq_kmps)} | grep -E "^Signature"'

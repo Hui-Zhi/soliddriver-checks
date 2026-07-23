@@ -7,9 +7,48 @@
 - KM: kernel module
 - KMP: kernel module package
 
-## Installation:
-- pypi: ```pip install soliddriver-checks```
-- zypper: the rpms can be found on [build.opensuse.org](https://build.opensuse.org/package/show/home:huizhizhao:soliddriver-checks/soliddriver-checks)
+## Installation
+
+### Option 1: Install from PyPI (pip)
+
+For most users, the easiest way to install is via pip:
+
+```bash
+pip install soliddriver-checks
+```
+
+This will install the latest stable version from PyPI along with all required dependencies.
+
+### Option 2: Install from RPM (zypper/rpm)
+
+For SUSE/openSUSE systems, you can install directly using RPM packages:
+
+**Using zypper (recommended for SUSE/openSUSE):**
+
+```bash
+# Add the repository
+sudo zypper addrepo https://download.opensuse.org/repositories/home:/huizhizhao:/soliddriver-checks/openSUSE_Tumbleweed/ soliddriver-checks
+sudo zypper refresh
+
+# Install the package
+sudo zypper install soliddriver-checks
+```
+
+**Using rpm directly:**
+
+Download RPM packages from [build.opensuse.org](https://build.opensuse.org/package/show/home:huizhizhao:soliddriver-checks/soliddriver-checks) and install:
+
+```bash
+sudo rpm -ivh soliddriver-checks-*.rpm
+```
+
+### Verify Installation
+
+After installation, verify that the tool is available:
+
+```bash
+soliddriver-checks --version
+```
 
 ## How should you address the issues?
 You should contact your IHVs to rebuild the KMP for you to meet the requirement of SUSE, and ask them to to follow the [Kernel Module Packages Manual](https://drivers.suse.com/doc/kmpm/) or contact SUSE directly if they don’t know how to do it.

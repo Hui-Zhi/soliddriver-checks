@@ -1,19 +1,16 @@
 import os
-from openpyxl.utils.dataframe import dataframe_to_rows
 import json
-from openpyxl import Workbook
 from jinja2 import Environment, FileSystemLoader
 from ..config import SDCConf, get_version, generate_timestamp
-from ..api.km import KMEvaluation
+from ..api.common import Evaluation
 from ..api.analysis import kms_to_dataframe, kms_to_json
-from .xlsx_utils import XlsxTemplate, KMXlsxStyler
 
 
 class KMReporter:
     def __init__(self):
         self._style = SDCConf()
 
-    def _format_cell(slef, value):
+    def _format_cell(self, value):
         if type(value) == dict:
             return value.get("value", "")
         else:
@@ -32,9 +29,9 @@ class KMReporter:
             imp_bgcolor = impstyle["background-color"]
             # imp_border = impstyle["border"]
 
-            if int(KMEvaluation.WARNING) == cell_level:
+            if int(Evaluation.WARNING) == cell_level:
                 style = f"background-color:{imp_bgcolor}"
-            elif int(KMEvaluation.ERROR) == cell_level:
+            elif int(Evaluation.ERROR) == cell_level:
                 style = f"background-color:{cri_bgcolor} color:{cri_color}"
 
             return style
@@ -42,29 +39,29 @@ class KMReporter:
         return [
             "",  # level style, no need for this.
             _get_cell_style(
-                KMEvaluation(row["level"]["value"]),
-                KMEvaluation(row["Module Name"]["level"]["value"]),
+                Evaluation(row["level"]["value"]),
+                Evaluation(row["Module Name"]["level"]["value"]),
             ),
             _get_cell_style(
-                KMEvaluation(row["level"]["value"]),
-                KMEvaluation(row["File"]["level"]["value"]),
+                Evaluation(row["level"]["value"]),
+                Evaluation(row["File"]["level"]["value"]),
             ),
             _get_cell_style(
-                KMEvaluation(row["level"]["value"]),
-                KMEvaluation(row["License"]["level"]["value"]),
+                Evaluation(row["level"]["value"]),
+                Evaluation(row["License"]["level"]["value"]),
             ),
             _get_cell_style(
-                KMEvaluation(row["level"]["value"]),
-                KMEvaluation(row["Signature"]["level"]["value"]),
+                Evaluation(row["level"]["value"]),
+                Evaluation(row["Signature"]["level"]["value"]),
             ),
             _get_cell_style(
-                KMEvaluation(row["level"]["value"]),
-                KMEvaluation(row['"supported" Flag']["level"]["value"]),
+                Evaluation(row["level"]["value"]),
+                Evaluation(row['"supported" Flag']["level"]["value"]),
             ),
             "",  # running style, no need for this.
             _get_cell_style(
-                KMEvaluation(row["level"]["value"]),
-                KMEvaluation(row["KMP"]["level"]["value"]),
+                Evaluation(row["level"]["value"]),
+                Evaluation(row["KMP"]["level"]["value"]),
             ),
         ]
 
@@ -93,31 +90,42 @@ class KMReporter:
             df_format = kms_to_dataframe(filter)  # read from local system.
 
         kms_in_total = len(df_format.index)
-        failed_kms_in_total = len(
-            [
-                f
-                for f in df_format["level"].to_list()
-                if f["value"] != int(KMEvaluation.PASS)
-            ]
-        )
+        if kms_in_total == 0:
+            failed_kms_in_total = 0
+        else:
+            failed_kms_in_total = len(
+                [
+                    f
+                    for f in df_format["level"].to_list()
+                    if f["value"] != int(Evaluation.PASS)
+                ]
+            )
 
         df_format = self._format_columns(df_format)
-        ts = (
-            df_format.style.hide(axis="index")
-            .hide([("level")], axis="columns")
-            .set_table_attributes('class="table_center"')
-            .apply(self._row_style_in_html, axis=1)
-            .format(self._format_cell)
-        )
+
+        # Handle empty dataframe case
+        if kms_in_total == 0:
+            ts = df_format.style.hide(axis="index")
+        else:
+            ts = (
+                df_format.style.hide(axis="index")
+                .hide([("level")], axis="columns")
+                .set_table_attributes('class="table_center"')
+                .apply(self._row_style_in_html, axis=1)
+                .format(self._format_cell)
+            )
 
         # df["running"].loc[df.running == True] = "&#9989;"
         # df["running"].loc[df.running == False] = "&#9940;"
         # df["running"].loc[df.running == ""] = "N/A"
 
         # Will be easier to get the value if run this after reformat the values.
-        external_kms_in_total = len(
-            [sf for sf in df_format['"supported" Flag'].to_list() if sf == "external"]
-        )
+        if kms_in_total == 0:
+            external_kms_in_total = 0
+        else:
+            external_kms_in_total = len(
+                [sf for sf in df_format['"supported" Flag'].to_list() if sf == "external"]
+            )
 
         kms_buffer = km_tmpl.render(
             version=get_version(),
@@ -131,69 +139,6 @@ class KMReporter:
 
         with open(file, "w") as f:
             f.write(kms_buffer)
-
-    def _create_xlsx_overview(self, ws):
-        et = XlsxTemplate()
-        et.set_km_overview(ws)
-
-    def _create_xlsx_sheet(self, wb, sys_info, df):
-        ws = wb.create_sheet(sys_info)
-
-        df_values = df.copy()
-        df_values = self._format_columns(df_values)
-        df_values = df_values.drop(["level"], axis=1)
-        df_values = df_values.applymap(lambda v: v.get("value", ""))
-        # fill the values
-        df_values = df_values.astype(str)
-        for row in dataframe_to_rows(df_values, index=False, header=True):
-            ws.append(row)
-
-        # format table
-        render = KMXlsxStyler()
-        # format header
-        for cell in ws[1]:
-            render.set_header(cell)
-
-        # format data
-        pair = {
-            "A": "modulename",
-            "B": "filename",
-            "C": "license",
-            "D": "signature",
-            "E": "supported",
-            "F": "running",
-            "G": "kmp",
-        }
-
-        data_start_row = 2
-        row_count = len(df.index) + data_start_row
-        for i in range(data_start_row, row_count):
-            # TODO: add row level style.
-            row_level = df.at[i - data_start_row, "level"]
-            for cell in ws[i]:
-                v = df.at[i - data_start_row, pair[cell.column_letter]]
-                lev = v.get("level")
-                if lev["value"] == int(KMEvaluation.PASS):
-                    render.normal(cell)
-                elif lev["value"] == int(KMEvaluation.WARNING):
-                    render.warning(cell)
-                elif lev["value"] == int(KMEvaluation.ERROR):
-                    render.error(cell)
-
-        render.set_column_width(
-            ws, {"A": 25, "B": 90, "C": 18, "D": 10, "E": 15, "F": 10, "G": 30}
-        )
-
-    def to_xlsx(self, sys_info, df_format, filter, file):
-        wb = Workbook()
-        self._create_xlsx_overview(wb.active)
-
-        if df_format is None:
-            df_format = kms_to_dataframe(filter)
-
-        self._create_xlsx_sheet(wb, sys_info, df_format)
-
-        wb.save(file)
 
     def to_json(self, sys_info, df_format, filter, file):
         buffer = kms_to_json(df_format)

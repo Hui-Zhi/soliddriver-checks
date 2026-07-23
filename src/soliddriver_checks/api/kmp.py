@@ -4,9 +4,13 @@ import re
 from collections import namedtuple
 import tempfile
 import fnmatch
+import logging
+from typing import Dict, List, Tuple, Any
 from ..config import SDCConf
-from enum import Enum, unique
+from .common import Evaluation
 from .utils.cmd import run_cmd
+
+logger = logging.getLogger(__name__)
 
 
 def raw_kmp_to_series(data):
@@ -48,28 +52,22 @@ def analysis_kmps_to_dataframe(data):
     return df
 
 
-@unique
-class KMPEvaluation(Enum):
-    PASS = 1
-    WARNING = 2
-    ERROR = 3
-
-    def __str__(self):
-        return self.name
-
-    def __int__(self):
-        return self.value
-
-    def to_json(self):
-        return {"level": self.name, "value": self.value}
-
-
 class KMPAnalysis:
     def __init__(self):
         conf = SDCConf()
         self._valid_licenses = conf.get_valid_licenses()
 
-    def kmp_analysis(self, data):
+    def kmp_analysis(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze a KMP package against SUSE requirements.
+
+        Args:
+            data: Dictionary containing KMP metadata including name, path, vendor,
+                  signature, license, wm2_invoked, reqs, modalias, and km_info.
+
+        Returns:
+            Dictionary with analysis results containing evaluation levels (PASS/WARNING/ERROR)
+            for each check dimension: name, path, vendor, signature, license, wm2_invoked, and km.
+        """
         ana_level = []
         name_lev, name_anls = self._kmp_name_analysis(data["name"])
         ana_level.append(name_lev["value"])
@@ -77,8 +75,8 @@ class KMPAnalysis:
         ana_level.append(path_lev["value"])
         ven_lev, vendor_anls = self._kmp_vendor_analysis(data["vendor"])
         ana_level.append(ven_lev["value"])
-        sig_lev, sig_anls = self._kmp_vendor_analysis(data["signature"])
-        ana_level.append(ven_lev["value"])
+        sig_lev, sig_anls = self._kmp_signature_analysis(data["signature"])
+        ana_level.append(sig_lev["value"])
         lic_lev, license_anls = self._licenses_analysis([data["license"]])
         ana_level.append(lic_lev["value"])
         wm2_lev, wm2_invoked_anls = self._kmp_wm2_invoked_analysis(
@@ -90,7 +88,7 @@ class KMPAnalysis:
         )
         ana_level.append(km_lev["value"])
 
-        row_eval = KMPEvaluation(max(ana_level))
+        row_eval = Evaluation(max(ana_level))
         return {
             "level": row_eval.to_json(),
             "name": {"level": name_lev, "value": name_anls},
@@ -103,26 +101,26 @@ class KMPAnalysis:
         }
 
     def _kmp_name_analysis(self, name):
-        return KMPEvaluation.PASS.to_json(), name
+        return Evaluation.PASS.to_json(), name
 
     def _kmp_path_analysis(self, path):
-        return KMPEvaluation.PASS.to_json(), path
+        return Evaluation.PASS.to_json(), path
 
     def _kmp_vendor_analysis(self, vendor):
         if vendor == "":
-            return KMPEvaluation.WARNING.to_json(), "Vendor should not be empty"
+            return Evaluation.WARNING.to_json(), "Vendor should not be empty"
 
-        return KMPEvaluation.PASS.to_json(), vendor
+        return Evaluation.PASS.to_json(), vendor
 
     def _kmp_signature_analysis(self, signature):
-        if signature == "" or signature is None:
-            return KMPEvaluation.WARNING.to_json(), "Signature should not be empty"
+        if signature == "" or signature is None or signature == "(none)":
+            return Evaluation.WARNING.to_json(), "Signature should not be empty"
 
-        return KMPEvaluation.PASS.to_json(), signature
+        return Evaluation.PASS.to_json(), signature
 
     def _licenses_analysis(self, licenses: list):
         if len(licenses) < 1 or (len(licenses) == 1 and licenses[0] == ""):
-            return KMPEvaluation.WARNING.to_json(), "No License found in KMP"
+            return Evaluation.WARNING.to_json(), "No License found in KMP"
 
         invlics = licenses.copy()
         for vlic in self._valid_licenses:
@@ -131,10 +129,10 @@ class KMPAnalysis:
                     invlics.remove(lic)
 
         if len(invlics) == 0:
-            return KMPEvaluation.PASS.to_json(), " ".join(licenses)
+            return Evaluation.PASS.to_json(), " ".join(licenses)
 
         return (
-            KMPEvaluation.WARNING.to_json(),
+            Evaluation.WARNING.to_json(),
             "Invalid or non Opensource license found: %s" % " ".join(invlics),
         )
 
@@ -142,19 +140,19 @@ class KMPAnalysis:
         if (
             wm2 or "debuginfo" in kmp_name
         ):  # currently we ignore wm2 check for debuginfo package.
-            return KMPEvaluation.PASS.to_json(), wm2
+            return Evaluation.PASS.to_json(), wm2
 
-        return KMPEvaluation.ERROR.to_json(), wm2
+        return Evaluation.ERROR.to_json(), wm2
 
     def _kmp_km_ana_summary(self, km_info, flavor):
-        summary = {"level": KMPEvaluation.PASS.to_json(), "value": ""}
+        summary = {"level": Evaluation.PASS.to_json(), "value": ""}
         values = []
         for km_path in km_info:
             km_data = km_info.get(km_path)
             level = km_data[flavor].get("level")
             msg = km_data[flavor].get("value")
 
-            summary["level"] = KMPEvaluation(
+            summary["level"] = Evaluation(
                 max(summary["level"]["value"], level["value"])
             ).to_json()
             values.append(msg)
@@ -173,7 +171,7 @@ class KMPAnalysis:
             ana_level.append(eval["value"])
 
             eval, msg = self._km_supported_analysis(km_info.get(km_path)["supported"])
-            if eval["value"] != KMPEvaluation.PASS:
+            if eval["value"] != Evaluation.PASS:
                 msg = f"{Path(km_path).name}: {msg}"
             km_analysis[km_path]["supported"] = {"level": eval, "value": msg}
             ana_level.append(eval["value"])
@@ -199,39 +197,48 @@ class KMPAnalysis:
             "alias": {"level": eval, "value": alaias_msg},
         }
 
-        return KMPEvaluation(max(ana_level)).to_json(), ana_summary
+        return Evaluation(max(ana_level)).to_json(), ana_summary
 
     def _kms_symbols_analysis(self, kmp_reqs, km_syms):
         syms = {}
         syms["unfound"] = []
         syms["checksum-mismatch"] = []
-        for sym in km_syms:
-            chksum = km_syms.get(sym)
-            chksum = hex(int(chksum, base=16))
 
-            req = kmp_reqs.get(sym, None)
-            if req is None:
-                syms["unfound"].append(sym)
+        # Loop through KMP requirements to check if module provides them
+        for sym_name, req in kmp_reqs.items():
+            # Check if required symbol is exported by module
+            if sym_name not in km_syms:
+                syms["unfound"].append(sym_name)
                 continue
 
-            if req.checksum != chksum:
+            # Check checksum match
+            km_chksum = km_syms.get(sym_name)
+            km_chksum = hex(int(km_chksum, base=16))
+
+            if req.checksum != km_chksum:
                 syms["checksum-mismatch"].append(
-                    "rpm checksum: %s, driver checksum: %s" % (chksum, req.checksum)
+                    f"{sym_name}: KMP={req.checksum}, module={km_chksum}"
                 )
 
         unfounded = len(syms["unfound"])
         mismatched = len(syms["checksum-mismatch"])
         if unfounded == 0 and mismatched == 0:
-            return KMPEvaluation.PASS.to_json(), "All passed"
+            return Evaluation.PASS.to_json(), "All passed"
 
         msg = ""
         if unfounded > 0:
-            msg = f"Number of symbols can not be found in KMP: {unfounded} "
+            # Show first 5 missing symbols
+            missing_syms = ", ".join(syms["unfound"][:5])
+            if len(syms["unfound"]) > 5:
+                missing_syms += f", ... (+{len(syms['unfound']) - 5} more)"
+            msg = f"Required symbols not found in module: {missing_syms}"
 
         if mismatched > 0:
-            msg = msg + f"Number of symbols checksum does not match: {mismatched}"
+            if msg:
+                msg += "; "
+            msg += f"Symbol checksum mismatches: {mismatched}"
 
-        return KMPEvaluation.ERROR.to_json(), msg.strip()
+        return Evaluation.ERROR.to_json(), msg.strip()
 
     def _kms_modalias_analysis(self, kmp_modalias, km_info):
         for a in kmp_modalias:
@@ -239,7 +246,7 @@ class KMPAnalysis:
                 a == "*"
             ):  # "use default-kernel:* to match all the devices is always a bad idea."
                 return (
-                    KMPEvaluation.ERROR.to_json(),
+                    Evaluation.ERROR.to_json(),
                     "KMP can match all the devices! Highly not recommended!",
                 )
 
@@ -265,7 +272,7 @@ class KMPAnalysis:
                 unmatched_ker_alias.append(ker_a)
 
         if len(unmatched_ker_alias) == 0 and len(unmatched_kmp_alias) == 0:
-            return KMPEvaluation.PASS.to_json(), "All passed"
+            return Evaluation.PASS.to_json(), "All passed"
 
         msg = ""
         if len(unmatched_ker_alias) > 0:
@@ -279,35 +286,64 @@ class KMPAnalysis:
             for kmpu in unmatched_kmp_alias:
                 msg += kmpu + ", "
 
-        return KMPEvaluation.ERROR.to_json(), msg
+        return Evaluation.ERROR.to_json(), msg
 
     def _km_signature_analysis(self, signature):
         if str(signature) != "":
-            return KMPEvaluation.PASS.to_json(), "Exist"
+            return Evaluation.PASS.to_json(), "Exist"
 
-        return KMPEvaluation.WARNING.to_json(), "No signature found"
+        return Evaluation.WARNING.to_json(), "No signature found"
 
     def _km_supported_analysis(self, values):
         if len(values) < 1:
-            return KMPEvaluation.ERROR.to_json(), "No 'supported' flag found"
+            return Evaluation.ERROR.to_json(), "No 'supported' flag found"
 
-        if len(values) == 1 and values[0] == "external":
-            return KMPEvaluation.PASS.to_json(), ""
+        if len(values) == 1:
+            value = values[0]
+            if value in ("yes", "external"):
+                return Evaluation.PASS.to_json(), f"{value}"
+            elif value == "no":
+                return Evaluation.WARNING.to_json(), f"{value}"
+            else:
+                return Evaluation.ERROR.to_json(), f"Invalid supported value: {value}"
 
         return (
-            KMPEvaluation.ERROR.to_json(),
+            Evaluation.ERROR.to_json(),
             "Multiple values found, they're %s" % " ".join(values),
         )
 
 
 class KMPReader:
-    def get_all_kmp_files(self, path):
-        cmd = "find %s -regextype sed -regex '.*-kmp-.*\.rpm$'" % path
-        kmps = run_cmd(cmd)
+    # Compile regex patterns once at class level for performance
+    _ML_PCI_RE = re.compile(r"modalias\((.*):(.*\:.*)\)")
+    _ML_ALL_RE = re.compile(r"modalias\((.*):(.*)\)")
 
-        return kmps.splitlines()
+    def get_all_kmp_files(self, path: str) -> List[str]:
+        path_obj = Path(path)
+        kmp_files = []
+        for rpm_file in path_obj.rglob("*.rpm"):
+            if "-kmp-" in rpm_file.name:
+                kmp_files.append(str(rpm_file))
+        return kmp_files
 
-    def collect_kmp_data(self, path):
+    def collect_kmp_data(self, path: str) -> Dict[str, Any]:
+        """Collect all metadata from a KMP RPM file.
+
+        Args:
+            path: Absolute path to the KMP RPM file.
+
+        Returns:
+            Dictionary containing extracted KMP metadata:
+            - name: Package name
+            - path: File path
+            - vendor: Package vendor
+            - signature: RPM signature
+            - license: Package license
+            - wm2_invoked: Whether weak-modules2 is invoked
+            - reqs: Kernel symbol requirements
+            - modalias: Device aliases (modalias patterns)
+            - km_info: Embedded kernel module information
+        """
         base_info = self._get_kmp_info(path)
         wm2_invoked = self._check_kmp_wm2_invoked(path)
         reqs = self._get_kmp_requires(path)
@@ -414,21 +450,13 @@ class KMPReader:
 
         success, err_info = self._check_kmp_manifest(supplements)
         if not success:
-            print(err_info)
+            logger.error(err_info)
             return []
-
-        # modalias = namedtuple("modalias", "kernel_flavor pci_re")
-        ml_pci_re = re.compile(
-            r"modalias\((.*):(.*\:.*)\)"
-        )  # example: modalias(kernel-default:pci:v000019A2d00000712sv*sd*bc*sc*i*)
-        ml_all_re = re.compile(
-            r"modalias\((.*):(.*)\)"
-        )  # example: packageand(kernel-default:primergy-be2iscsi)
 
         alias_re = []
         for line in supplements.splitlines():
-            pci_rst = ml_pci_re.match(line)
-            all_rst = ml_all_re.match(line)
+            pci_rst = self._ML_PCI_RE.match(line)
+            all_rst = self._ML_ALL_RE.match(line)
             if pci_rst:
                 __, pci = pci_rst.groups()
                 if "pci:" in pci:  # only check PCI devices
@@ -446,7 +474,7 @@ class KMPReader:
 
         success, err_info = self._check_kmp_manifest(scripts)
         if not success:
-            print(err_info)
+            logger.error(err_info)
             return False
 
         lines = scripts.splitlines()
@@ -465,7 +493,7 @@ class KMPReader:
 
         success, err_info = self._check_kmp_manifest(requires)
         if not success:
-            print(err_info)
+            logger.error(err_info)
             return {}
 
         mod_reqs = {}
@@ -486,7 +514,7 @@ class KMPReader:
 
         success, err_info = self._check_kmp_manifest(info)
         if not success:
-            print(err_info)
+            logger.error(err_info)
             return {}
 
         mod_info = {}

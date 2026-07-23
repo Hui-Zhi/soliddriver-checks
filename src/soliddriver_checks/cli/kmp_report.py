@@ -2,12 +2,9 @@ import pandas as pd
 import os
 from dominate.tags import tr, td, th, table
 from dominate.util import raw
-from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl import Workbook
 from jinja2 import Environment, FileSystemLoader
 from ..config import SDCConf, get_version, generate_timestamp
-from ..api.kmp import KMPEvaluation
-from .xlsx_utils import XlsxTemplate, KMPXlsxStyler
+from ..api.common import Evaluation
 
 
 class KMPReporter:
@@ -24,7 +21,7 @@ class KMPReporter:
             counter = 0
             for v in col:
                 eval = v.get("level")
-                if eval["value"] != int(KMPEvaluation.PASS):
+                if eval["value"] != int(Evaluation.PASS):
                     counter += 1
             return counter
 
@@ -160,17 +157,35 @@ class KMPReporter:
         return tb
 
     def _detail_to_html(self, df):
-        def _create_cell(ana_val):
+        def _create_cell(ana_val, is_path=False):
             level, value = ana_val.get("level"), ana_val.get("value")
             if value is None:
                 value = ""
 
-            if level["value"] == int(KMPEvaluation.PASS):
-                return td(value)
-            elif level["value"] == int(KMPEvaluation.WARNING):
-                return td(value).set_attribute("class", "important_failed")
-            elif level["value"] == int(KMPEvaluation.ERROR):
-                return td(value).set_attribute("class", "critical_failed")
+            # Determine status class for individual cell coloring
+            css_class = ""
+            if level["value"] == int(Evaluation.PASS):
+                css_class = "status-pass"
+            elif level["value"] == int(Evaluation.WARNING):
+                css_class = "status-warning"
+            elif level["value"] == int(Evaluation.ERROR):
+                css_class = "status-error"
+
+            # Add mono class for paths
+            if is_path:
+                css_class += " mono"
+
+            # Truncate long error messages and make them expandable
+            if len(str(value)) > 100 and css_class in ["status-warning", "status-error"]:
+                short_value = str(value)[:97] + "..."
+                cell = td(raw(f'<div>{short_value}</div><span class="expandable-trigger">Show more</span><div class="expandable-content"><pre>{value}</pre></div>'))
+                cell.set_attribute("class", css_class + " expandable")
+                return cell
+            else:
+                cell = td(value)
+                if css_class:
+                    cell.set_attribute("class", css_class)
+                return cell
 
         tb = table()
         with tb:
@@ -181,68 +196,68 @@ class KMPReporter:
                     "class", f"detail_kernel_module"
                 )
             with tr():
-                th("Name").set_attribute("class", f"detail_0")
-                th("Path").set_attribute("class", f"detail_1")
-                th("Vendor").set_attribute("class", f"detail_2")
+                th("Name").set_attribute("class", f"detail_0 sortable")
+                th("Path").set_attribute("class", f"detail_1 sortable")
+                th("Vendor").set_attribute("class", f"detail_2 sortable")
                 th(
                     raw(
                         'Signature<span class="tooltiptext">Only check there\'s a signature or not.</span>'
                     )
-                ).set_attribute("class", f"detail_3 tooltip")
+                ).set_attribute("class", f"detail_3 tooltip sortable")
                 th(
                     raw(
                         'License<span class="tooltiptext">KMP and it\'s kernel modules should use open source licenses.</span>'
                     )
-                ).set_attribute("class", f"detail_4 tooltip")
+                ).set_attribute("class", f"detail_4 tooltip sortable")
                 th(
                     raw(
                         'Weak Module Invoked<span class="tooltiptext">Weak Module is necessary to make 3rd party kernel modules installed for one kernel available to KABI-compatible kernels. </span>'
                     )
-                ).set_attribute("class", f"detail_5 tooltip")
+                ).set_attribute("class", f"detail_5 tooltip sortable")
                 th(
                     raw(
                         'Licenses<span class="tooltiptext">KMP and it\'s kernel modules should use open source licenses.</span>'
                     )
-                ).set_attribute("class", f"detail_6 tooltip")
+                ).set_attribute("class", f"detail_6 tooltip sortable km-check")
                 th(
                     raw(
-                        'Signatures<span class="tooltiptext">"supported" flag: <br/>  "yes": Only supported by SUSE<br/>  "external": supported by both SUSE and vendor</span>'
+                        'Signatures<span class="tooltiptext">Module signature check - verifies kernel module is properly signed</span>'
                     )
-                ).set_attribute("class", f"detail_6 tooltip")
+                ).set_attribute("class", f"detail_7 tooltip sortable km-check")
                 th(
                     raw(
                         'Supported Flag<span class="tooltiptext">"supported" flag: <br/>  "yes": Only supported by SUSE<br/>  "external": supported by both SUSE and vendor</span>'
                     )
-                ).set_attribute("class", f"detail_6 tooltip")
+                ).set_attribute("class", f"detail_8 tooltip sortable km-check")
                 th(
                     raw(
                         'Symbols<span class="tooltiptext">Symbols check is to check whether the symbols in kernel modules matches the symbols in its package.</span>'
                     )
-                ).set_attribute("class", f"detail_7 tooltip")
+                ).set_attribute("class", f"detail_9 tooltip sortable km-check")
                 th(
                     raw(
                         'Modalias<span class="tooltiptext">Modalias check is to check whether the modalias in kernel modules matches the modalias in its package.</span>'
                     )
-                ).set_attribute("class", f"detail_8 tooltip")
+                ).set_attribute("class", f"detail_10 tooltip sortable km-check")
 
             for __, row in df.iterrows():
                 with tr() as r:
-                    if row["level"]["value"] == int(KMPEvaluation.WARNING):
+                    if row["level"]["value"] == int(Evaluation.WARNING):
                         r.set_attribute("class", "important_failed_row")
-                    elif row["level"]["value"] == int(KMPEvaluation.ERROR):
+                    elif row["level"]["value"] == int(Evaluation.ERROR):
                         r.set_attribute("class", "critical_failed_row")
 
-                    _create_cell(row["name"])
-                    _create_cell(row["path"])
-                    _create_cell(row["vendor"])
-                    _create_cell(row["signature"])
-                    _create_cell(row["license"])
-                    _create_cell(row["wm2_invoked"])
-                    _create_cell(row["km_licenses"])
-                    _create_cell(row["km_signatures"])
-                    _create_cell(row["supported_flag"])
-                    _create_cell(row["symbols"])
-                    _create_cell(row["modalias"])
+                    _create_cell(row["name"], is_path=False)
+                    _create_cell(row["path"], is_path=True)
+                    _create_cell(row["vendor"], is_path=False)
+                    _create_cell(row["signature"], is_path=False)
+                    _create_cell(row["license"], is_path=False)
+                    _create_cell(row["wm2_invoked"], is_path=False)
+                    _create_cell(row["km_licenses"], is_path=False)
+                    _create_cell(row["km_signatures"], is_path=False)
+                    _create_cell(row["supported_flag"], is_path=False)
+                    _create_cell(row["symbols"], is_path=False)
+                    _create_cell(row["modalias"], is_path=False)
 
         return tb
 
@@ -263,114 +278,6 @@ class KMPReporter:
 
         with open(file, "w") as f:
             f.write(kmp_checks)
-
-    def _create_xlsx_overview(self, ws):
-        et = XlsxTemplate()
-        et.set_kmp_overview(ws)
-
-    def _summary_to_xlsx(self, wb, df):
-        ws = wb.create_sheet("Vendor Summary")
-        for row in dataframe_to_rows(df, index=False, header=True):
-            ws.append(row)
-
-        render = KMPXlsxStyler()
-        render.render_summary(ws)
-
-    def _detail_to_xlsx(self, wb, df):
-        ws = wb.create_sheet("KMP Detail")
-        df_values = df.copy()
-        # format value
-        df_values = df_values.drop(["level"], axis=1)
-        df_values = df_values.applymap(lambda v: v.get("value", ""))
-        # fill the values
-        df_values = df_values.astype(str)
-        for row in dataframe_to_rows(df_values, index=False, header=False):
-            ws.append(row)
-
-        ws.insert_rows(1, amount=2)
-
-        render = KMPXlsxStyler()
-        # create header
-        def set_header(pairs):
-            for loc in pairs:
-                ws[loc] = pairs[loc]
-                render.set_header(ws[loc])
-
-        set_header(
-            {
-                "A1": "KMP Checks",
-                "G1": "Kernel Module Checks",
-                "A2": "Name",
-                "B2": "Path",
-                "C2": "Vendor",
-                "D2": "Signature",
-                "E2": "License",
-                "F2": "Weak Module Invoked",
-                "G2": "Licenses",
-                "H2": "Signatures",
-                "I2": "Supported Flag",
-                "J2": "Symbols",
-                "K2": "Modalias",
-            }
-        )
-        ws.merge_cells("A1:F1")
-        ws.merge_cells("G1:K1")
-
-        pair = {
-            "A": "name",
-            "B": "path",
-            "C": "vendor",
-            "D": "signature",
-            "E": "license",
-            "F": "wm2_invoked",
-            "G": "km_licenses",
-            "H": "km_signatures",
-            "I": "supported_flag",
-            "J": "symbols",
-            "K": "modalias",
-        }
-
-        data_start_row = 3
-        row_count = len(df.index) + data_start_row
-        for i in range(data_start_row, row_count):
-            # TODO: add row level style.
-            row_level = df.at[i - data_start_row, "level"]
-            for cell in ws[i]:
-                v = df.at[i - data_start_row, pair[cell.column_letter]]
-                lev = v.get("level")
-                if lev["value"] == int(KMPEvaluation.PASS):
-                    render.normal(cell)
-                elif lev["value"] == int(KMPEvaluation.WARNING):
-                    render.warning(cell)
-                elif lev["value"] == int(KMPEvaluation.ERROR):
-                    render.error(cell)
-
-        render.set_column_width(
-            ws,
-            {
-                "A": 25,
-                "B": 90,
-                "C": 18,
-                "D": 30,
-                "E": 15,
-                "F": 10,
-                "G": 20,
-                "H": 10,
-                "I": 30,
-                "J": 60,
-                "K": 40,
-            },
-        )
-
-    def to_xlsx(self, df, file):
-        wb = Workbook()
-        self._create_xlsx_overview(wb.active)
-
-        sum_table = self._summary(df)
-        self._summary_to_xlsx(wb, sum_table)
-        self._detail_to_xlsx(wb, df)
-
-        wb.save(file)
 
     def to_json(self, df, file):
         df.to_json(file, orient="records")

@@ -1,0 +1,9 @@
+# Real vendor RPMs - not tracked in repository
+# These are kept locally for comprehensive testing
+# but should not be committed
+*.rpm
+
+# Exception: Allow test packages with fake vendors to be tracked
+# (Uncomment if you want to commit built test packages)
+# !acme-network-kmp-*.rpm
+# !license-test-*.rpm
