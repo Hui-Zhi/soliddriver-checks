@@ -1,3 +1,10 @@
 __pycache__
 tmp
 dist
+venv
+
+.DS_Store
+.vscode/
+.claude/
+*.egg-info/
+tests/output/

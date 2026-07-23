@@ -1,7 +1,7 @@
-Name:           license-test-unknown-kmp
+Name:           no-wm2-kmp
 Version:        1.0
 Release:        1
-Summary:        Test KMP with unknown license
+Summary:        No Weak-modules2 Test KMP
 License:        GPL-2.0
 Vendor:         SUSE
 Group:          System/Kernel
@@ -13,8 +13,8 @@ BuildRequires:  module-init-tools
 %kernel_module_package
 
 %description
-Test kernel module package with unknown license.
-Used for validating soliddriver-checks license detection.
+Test KMP that does NOT invoke weak-modules2.
+Should trigger ERROR for missing weak-modules2 invocation.
 
 %prep
 %setup -qcT
@@ -37,12 +37,8 @@ for flavor in %flavors_to_build; do
     make -C /lib/modules/%{kernel_version $flavor}/build M=$PWD/obj/$flavor INSTALL_MOD_PATH=$RPM_BUILD_ROOT modules_install
 done
 
-%post
-/usr/lib/module-init-tools/weak-modules2 --add-kernel || :
-
-%postun
-/usr/lib/module-init-tools/weak-modules2 --remove-kernel || :
+# NOTE: No %post or %postun - intentionally missing weak-modules2
 
 %changelog
-* Mon Jul 21 2026 - Test Suite
-- Initial test package for license validation
+* Mon Jul 22 2026 - Test Suite
+- Test package without weak-modules2 invocation

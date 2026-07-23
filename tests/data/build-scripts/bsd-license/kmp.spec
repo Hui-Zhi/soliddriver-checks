@@ -1,8 +1,8 @@
-Name:           license-test-unknown-kmp
+Name:           bsd-license-kmp
 Version:        1.0
 Release:        1
-Summary:        Test KMP with unknown license
-License:        GPL-2.0
+Summary:        BSD License Test KMP
+License:        BSD-3-Clause
 Vendor:         SUSE
 Group:          System/Kernel
 Source0:        module.c
@@ -13,8 +13,8 @@ BuildRequires:  module-init-tools
 %kernel_module_package
 
 %description
-Test kernel module package with unknown license.
-Used for validating soliddriver-checks license detection.
+Test KMP with BSD license (valid open source).
+Tests that BSD licenses are properly recognized as valid.
 
 %prep
 %setup -qcT
@@ -44,5 +44,5 @@ done
 /usr/lib/module-init-tools/weak-modules2 --remove-kernel || :
 
 %changelog
-* Mon Jul 21 2026 - Test Suite
-- Initial test package for license validation
+* Mon Jul 22 2026 - Test Suite
+- BSD license test package

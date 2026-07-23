@@ -17,7 +17,6 @@ from urllib.parse import urlparse
 
 FORMAT_TYPES = {
     "html": ".html",
-    "xlsx": ".xlsx",
     "json": ".json",
 }
 
@@ -57,7 +56,7 @@ class Check_Target:
                 return self._target
 
             return None
-        except:
+        except (ValueError, AttributeError, TypeError):
             return None
 
     @property
@@ -83,8 +82,6 @@ def kmp_export(exporter, check_result, out_format, dst):
     dst = with_format_suffix(dst, out_format)
     if out_format == "html":
         exporter.to_html(check_result, dst)
-    elif out_format == "xlsx":
-        exporter.to_xlsx(check_result, dst)
     elif out_format == "json":
         exporter.to_json(check_result, dst)
 
@@ -93,8 +90,6 @@ def km_export(exporter, label, check_result, filter, out_format, dst):
     dst = with_format_suffix(dst, out_format)
     if out_format == "html":
         exporter.to_html(label, check_result, filter, dst)
-    elif out_format == "xlsx":
-        exporter.to_xlsx(label, check_result, filter, dst)
     elif out_format == "json":
         exporter.to_json(label, check_result, filter, dst)
 

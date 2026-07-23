@@ -3,6 +3,7 @@ Version:        1.0
 Release:        1
 Summary:        Test KMP with GPL but no supported flag
 License:        GPL-2.0
+Vendor:         SUSE
 Group:          System/Kernel
 Source0:        module.c
 Source1:        Makefile
@@ -35,6 +36,12 @@ export INSTALL_MOD_DIR=updates
 for flavor in %flavors_to_build; do
     make -C /lib/modules/%{kernel_version $flavor}/build M=$PWD/obj/$flavor INSTALL_MOD_PATH=$RPM_BUILD_ROOT modules_install
 done
+
+%post
+/usr/lib/module-init-tools/weak-modules2 --add-kernel || :
+
+%postun
+/usr/lib/module-init-tools/weak-modules2 --remove-kernel || :
 
 %changelog
 * Mon Jul 21 2026 - Test Suite

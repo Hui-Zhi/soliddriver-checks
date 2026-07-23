@@ -1,0 +1,18 @@
+FROM opensuse/leap:15.5
+
+# Install build dependencies
+RUN zypper --non-interactive install -y \
+    kernel-default-devel \
+    rpm-build \
+    gcc \
+    make \
+    && zypper clean -a
+
+# Create build directory
+WORKDIR /build
+
+# Copy build scripts
+COPY tests/data/build-scripts/ /build/
+
+# Build all test RPMs
+CMD ["/bin/bash", "-c", "./build-all.sh && cp *.rpm /output/ 2>/dev/null || true && ls -lh /output/"]
