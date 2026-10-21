@@ -4,7 +4,6 @@ import json
 from ..config import SDCConf
 from enum import Enum, unique
 from .utils.cmd import run_cmd
-import requests
 
 
 @unique
@@ -259,9 +258,3 @@ class KMReader:
 
         return kmp_sig_pairs
 
-
-def read_remote_json(url):
-    response = requests.get(url)
-    df = pd.read_json(response.text)
-
-    return df

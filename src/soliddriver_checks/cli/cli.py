@@ -1,7 +1,6 @@
 import click
 import json
 from ..api import analysis
-from ..api.km import read_remote_json
 from .terminal_logs import KMPTerminalOutput, single_kmp_output
 from .kmp_report import KMPReporter
 from .km_report import KMReporter
@@ -12,7 +11,6 @@ from pathlib import Path
 from rich.logging import RichHandler
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 from ..version import __VERSION__
-from urllib.parse import urlparse
 
 
 FORMAT_TYPES = {
@@ -46,23 +44,6 @@ class Check_Target:
         target = Path(self._target)
         if target.is_dir():
             return target
-        return None
-
-    @property
-    def url(self):
-        try:
-            self._url = urlparse(self._target)
-            if all([self._url.scheme, self._url.netloc]):
-                return self._target
-
-            return None
-        except:
-            return None
-
-    @property
-    def url_host(self):
-        if self.url is not None:
-            return self._url.hostname
         return None
 
 
@@ -216,10 +197,6 @@ def run(check_target, output, out_format, filter, version):
         logger.info("Retrieving kernel module data for %s" % label)
         reporter = KMReporter()
         km_export(reporter, label, None, filter, out_format, dst)
-    elif target.url:
-        df = read_remote_json(target.url)
-        reporter = KMReporter()
-        km_export(reporter, target.url_host, df, filter, out_format, dst)
 
 
 if __name__ == "__main__":

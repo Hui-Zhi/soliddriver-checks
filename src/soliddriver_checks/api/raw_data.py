@@ -32,7 +32,3 @@ def km_to_dataframe(proc_injector=None):
 
 def km_to_json():
     pass
-
-
-def remote_km_to_json(remote_info, proc_injector=None):
-    pass
