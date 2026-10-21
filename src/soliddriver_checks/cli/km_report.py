@@ -1,12 +1,9 @@
 import os
-from openpyxl.utils.dataframe import dataframe_to_rows
 import json
-from openpyxl import Workbook
 from jinja2 import Environment, FileSystemLoader
 from ..config import SDCConf, get_version, generate_timestamp
 from ..api.km import KMEvaluation
 from ..api.analysis import kms_to_dataframe, kms_to_json
-from .xlsx_utils import XlsxTemplate, KMXlsxStyler
 
 
 class KMReporter:
@@ -131,69 +128,6 @@ class KMReporter:
 
         with open(file, "w") as f:
             f.write(kms_buffer)
-
-    def _create_xlsx_overview(self, ws):
-        et = XlsxTemplate()
-        et.set_km_overview(ws)
-
-    def _create_xlsx_sheet(self, wb, sys_info, df):
-        ws = wb.create_sheet(sys_info)
-
-        df_values = df.copy()
-        df_values = self._format_columns(df_values)
-        df_values = df_values.drop(["level"], axis=1)
-        df_values = df_values.applymap(lambda v: v.get("value", ""))
-        # fill the values
-        df_values = df_values.astype(str)
-        for row in dataframe_to_rows(df_values, index=False, header=True):
-            ws.append(row)
-
-        # format table
-        render = KMXlsxStyler()
-        # format header
-        for cell in ws[1]:
-            render.set_header(cell)
-
-        # format data
-        pair = {
-            "A": "modulename",
-            "B": "filename",
-            "C": "license",
-            "D": "signature",
-            "E": "supported",
-            "F": "running",
-            "G": "kmp",
-        }
-
-        data_start_row = 2
-        row_count = len(df.index) + data_start_row
-        for i in range(data_start_row, row_count):
-            # TODO: add row level style.
-            row_level = df.at[i - data_start_row, "level"]
-            for cell in ws[i]:
-                v = df.at[i - data_start_row, pair[cell.column_letter]]
-                lev = v.get("level")
-                if lev["value"] == int(KMEvaluation.PASS):
-                    render.normal(cell)
-                elif lev["value"] == int(KMEvaluation.WARNING):
-                    render.warning(cell)
-                elif lev["value"] == int(KMEvaluation.ERROR):
-                    render.error(cell)
-
-        render.set_column_width(
-            ws, {"A": 25, "B": 90, "C": 18, "D": 10, "E": 15, "F": 10, "G": 30}
-        )
-
-    def to_xlsx(self, sys_info, df_format, filter, file):
-        wb = Workbook()
-        self._create_xlsx_overview(wb.active)
-
-        if df_format is None:
-            df_format = kms_to_dataframe(filter)
-
-        self._create_xlsx_sheet(wb, sys_info, df_format)
-
-        wb.save(file)
 
     def to_json(self, sys_info, df_format, filter, file):
         buffer = kms_to_json(df_format)

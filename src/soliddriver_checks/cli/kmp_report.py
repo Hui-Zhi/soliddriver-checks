@@ -2,12 +2,9 @@ import pandas as pd
 import os
 from dominate.tags import tr, td, th, table
 from dominate.util import raw
-from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl import Workbook
 from jinja2 import Environment, FileSystemLoader
 from ..config import SDCConf, get_version, generate_timestamp
 from ..api.kmp import KMPEvaluation
-from .xlsx_utils import XlsxTemplate, KMPXlsxStyler
 
 
 class KMPReporter:
@@ -263,114 +260,6 @@ class KMPReporter:
 
         with open(file, "w") as f:
             f.write(kmp_checks)
-
-    def _create_xlsx_overview(self, ws):
-        et = XlsxTemplate()
-        et.set_kmp_overview(ws)
-
-    def _summary_to_xlsx(self, wb, df):
-        ws = wb.create_sheet("Vendor Summary")
-        for row in dataframe_to_rows(df, index=False, header=True):
-            ws.append(row)
-
-        render = KMPXlsxStyler()
-        render.render_summary(ws)
-
-    def _detail_to_xlsx(self, wb, df):
-        ws = wb.create_sheet("KMP Detail")
-        df_values = df.copy()
-        # format value
-        df_values = df_values.drop(["level"], axis=1)
-        df_values = df_values.applymap(lambda v: v.get("value", ""))
-        # fill the values
-        df_values = df_values.astype(str)
-        for row in dataframe_to_rows(df_values, index=False, header=False):
-            ws.append(row)
-
-        ws.insert_rows(1, amount=2)
-
-        render = KMPXlsxStyler()
-        # create header
-        def set_header(pairs):
-            for loc in pairs:
-                ws[loc] = pairs[loc]
-                render.set_header(ws[loc])
-
-        set_header(
-            {
-                "A1": "KMP Checks",
-                "G1": "Kernel Module Checks",
-                "A2": "Name",
-                "B2": "Path",
-                "C2": "Vendor",
-                "D2": "Signature",
-                "E2": "License",
-                "F2": "Weak Module Invoked",
-                "G2": "Licenses",
-                "H2": "Signatures",
-                "I2": "Supported Flag",
-                "J2": "Symbols",
-                "K2": "Modalias",
-            }
-        )
-        ws.merge_cells("A1:F1")
-        ws.merge_cells("G1:K1")
-
-        pair = {
-            "A": "name",
-            "B": "path",
-            "C": "vendor",
-            "D": "signature",
-            "E": "license",
-            "F": "wm2_invoked",
-            "G": "km_licenses",
-            "H": "km_signatures",
-            "I": "supported_flag",
-            "J": "symbols",
-            "K": "modalias",
-        }
-
-        data_start_row = 3
-        row_count = len(df.index) + data_start_row
-        for i in range(data_start_row, row_count):
-            # TODO: add row level style.
-            row_level = df.at[i - data_start_row, "level"]
-            for cell in ws[i]:
-                v = df.at[i - data_start_row, pair[cell.column_letter]]
-                lev = v.get("level")
-                if lev["value"] == int(KMPEvaluation.PASS):
-                    render.normal(cell)
-                elif lev["value"] == int(KMPEvaluation.WARNING):
-                    render.warning(cell)
-                elif lev["value"] == int(KMPEvaluation.ERROR):
-                    render.error(cell)
-
-        render.set_column_width(
-            ws,
-            {
-                "A": 25,
-                "B": 90,
-                "C": 18,
-                "D": 30,
-                "E": 15,
-                "F": 10,
-                "G": 20,
-                "H": 10,
-                "I": 30,
-                "J": 60,
-                "K": 40,
-            },
-        )
-
-    def to_xlsx(self, df, file):
-        wb = Workbook()
-        self._create_xlsx_overview(wb.active)
-
-        sum_table = self._summary(df)
-        self._summary_to_xlsx(wb, sum_table)
-        self._detail_to_xlsx(wb, df)
-
-        wb.save(file)
 
     def to_json(self, df, file):
         df.to_json(file, orient="records")
