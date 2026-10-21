@@ -22,6 +22,18 @@ class KMEvaluation(Enum):
         return {"level": self.name, "value": self.value}
 
 
+KM_COLUMNS = [
+    "level",
+    "modulename",
+    "filename",
+    "license",
+    "signature",
+    "supported",
+    "running",
+    "kmp",
+]
+
+
 class KMAnalysis:
     def __init__(self):
         conf = SDCConf()
@@ -30,7 +42,7 @@ class KMAnalysis:
 
     def kms_analysis(self, kms):
         row_level = []
-        df = pd.DataFrame()
+        df = pd.DataFrame(columns=KM_COLUMNS)
         for filename in kms:
             lev_name, name = self._km_module_name_analysis(
                 kms[filename].get("name", "")
@@ -73,7 +85,10 @@ class KMAnalysis:
                 }
             )
 
-            df = pd.concat([df, row.to_frame().T], ignore_index=True)
+            if len(df.index) == 0:
+                df = row.to_frame().T
+            else:
+                df = pd.concat([df, row.to_frame().T], ignore_index=True)
 
         return df
 

@@ -23,8 +23,24 @@ def raw_kmp_to_series(data):
     )
 
 
+KMP_COLUMNS = [
+    "level",
+    "name",
+    "path",
+    "vendor",
+    "signature",
+    "license",
+    "wm2_invoked",
+    "supported_flag",
+    "km_signatures",
+    "km_licenses",
+    "symbols",
+    "modalias",
+]
+
+
 def analysis_kmps_to_dataframe(data):
-    df = pd.DataFrame()
+    df = pd.DataFrame(columns=KMP_COLUMNS)
 
     for item in data:
         new_row = pd.Series(
@@ -43,7 +59,10 @@ def analysis_kmps_to_dataframe(data):
                 "modalias": item["km"]["alias"],
             }
         )
-        df = pd.concat([df, new_row.to_frame().T], ignore_index=True)
+        if len(df.index) == 0:
+            df = new_row.to_frame().T
+        else:
+            df = pd.concat([df, new_row.to_frame().T], ignore_index=True)
 
     return df
 

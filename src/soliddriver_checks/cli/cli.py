@@ -1,6 +1,9 @@
 import click
 import json
 from ..api import analysis
+from ..api.filter import check_filter
+from ..api.km import KM_COLUMNS
+from ..api.kmp import KMP_COLUMNS
 from .terminal_logs import KMPTerminalOutput, single_kmp_output
 from .kmp_report import KMPReporter
 from .km_report import KMReporter
@@ -110,7 +113,9 @@ def dst_is_ok(dst, out_format):
     "--filter",
     "-i",
     default="",
-    help="Filter kernel module to report (Beta)",
+    help="Only report the KMPs or kernel modules that match the filter "
+    "expression, e.g. '\"level.level\" != \"PASS\"'. "
+    "See README.md for the syntax.",
 )
 @click.option(
     "--output",
@@ -144,6 +149,12 @@ def run(check_target, output, out_format, filter, version):
     logger = logging.getLogger("soliddriver-checks")
 
     target = Check_Target(check_target)
+
+    if filter and (target.dir or target.system):
+        try:
+            check_filter(filter, KMP_COLUMNS if target.dir else KM_COLUMNS)
+        except ValueError as e:
+            raise click.BadParameter(str(e), param_hint="'--filter'")
 
     dst = Path(output)
     if dst.is_dir() or output.endswith("/"):

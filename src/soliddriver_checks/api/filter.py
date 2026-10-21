@@ -1,4 +1,5 @@
 from lark import Lark, Transformer
+from lark.exceptions import LarkError, VisitError
 import re
 import pandas as pd
 
@@ -23,246 +24,105 @@ notequal: STRING "!=" STRING
 """
 
 
-class KernelModuleListFilter (Transformer):
-    def __init__(self):
+class KernelModuleListFilter(Transformer):
+    """Evaluate the parsed filter to a boolean mask over the rows of data.
+
+    Every cell in data is {"level": {"level": "PASS", ...}, "value": ...},
+    except the "level" column, which holds the row evaluation
+    {"level": "PASS", "value": 1}.
+    """
+
+    LEVEL_SUFFIX = ".level"
+
+    def __init__(self, data):
         super().__init__()
-        self.operators = []
+        self.data = data
+
+    @staticmethod
+    def _unquote(token):
+        return str(token)[1:-1]
+
+    def _cells(self, key):
+        key = self._unquote(key)
+
+        if key == "level" + self.LEVEL_SUFFIX:  # row evaluation
+            column, get = "level", lambda cell: cell["level"]
+        elif key.endswith(self.LEVEL_SUFFIX):  # evaluation of a field
+            column = key[: -len(self.LEVEL_SUFFIX)]
+            get = lambda cell: cell["level"]["level"]
+        else:  # content of a field
+            column, get = key, lambda cell: cell["value"]
+
+        if column not in self.data.columns:
+            keys = [c for c in self.data.columns if c != "level"]
+            raise ValueError(
+                "Unknown filter key: \"%s\". Valid keys: %s"
+                % (key, ", ".join(keys))
+            )
+
+        # compare as strings, so "True" matches a boolean True.
+        return self.data[column].apply(
+            lambda cell: "" if get(cell) is None else str(get(cell))
+        )
 
     def equal(self, vals):
-        val = "equal %s = %s" % (vals[0], vals[1])
-        self.operators.append(val)
+        return self._cells(vals[0]) == self._unquote(vals[1])
 
     def notequal(self, vals):
-        val = "ne %s = %s" % (vals[0], vals[1])
-        self.operators.append(val)
+        return self._cells(vals[0]) != self._unquote(vals[1])
 
     def match(self, vals):
-        val = "match %s = %s" % (vals[0], vals[1])
-        self.operators.append(val)
+        pattern = re.compile(self._unquote(vals[1]))
+        return self._cells(vals[0]).apply(lambda v: pattern.search(v) is not None)
 
     def nil(self, vals):
-        val = "no %s" % vals[0]
-        self.operators.append(val)
+        return self._cells(vals[0]) == ""
 
     def conjunction(self, vals):
-        if len(vals) > 1:
-            self.operators.append("and")
+        mask = vals[0]
+        for val in vals[1:]:
+            mask = mask & val
+        return mask
 
     def disjunction(self, vals):
-        if len(vals) > 1:
-            self.operators.append("or")
+        mask = vals[0]
+        for val in vals[1:]:
+            mask = mask | val
+        return mask
+
+    def expression(self, vals):
+        return vals[0]
+
+    group = expression
+    operation = expression
+
+
+def _evaluate(filter, data):
+    try:
+        tree = Lark(grammar).parse(filter)
+    except LarkError as e:
+        raise ValueError("Invalid filter: %s" % str(e).strip()) from None
+
+    try:
+        return KernelModuleListFilter(data).transform(tree)
+    except VisitError as e:  # unwrap errors raised inside the transformer
+        if isinstance(e.orig_exc, re.error):
+            raise ValueError(
+                "Invalid regular expression in filter: %s" % e.orig_exc
+            ) from None
+        raise e.orig_exc from None
+
+
+def check_filter(filter, columns):
+    """Raise ValueError if filter isn't valid for data with these columns."""
+    if filter:
+        _evaluate(filter, pd.DataFrame(columns=columns))
 
 
 def km_filter(filter, data):
-    if filter == "":
+    if filter == "" or len(data.index) == 0:
         return data
 
-    parser = Lark(grammar)
-    kmf = KernelModuleListFilter()
-    tree = parser.parse(filter)
-    kmf.transform(tree)
+    mask = _evaluate(filter, data)
 
-    return KM_filter(kmf.operators, data).process()
-
-
-class KM_filter:
-    def __init__(self, operators, data):
-        self._operators = operators
-        self.data = data.copy()
-
-    def _foramt_value(val: str):
-        val = val.strip()
-
-        # remove '"' from left and right.
-        return val[1:len(val)-1]
-
-    def _split_operator(operator: str):
-        if operator.startswith("equal"):
-            eq = operator[operator.find(" "):]
-            vals = eq.split("=")
-            flag, value = vals[0], "=".join(vals[1:])
-            return [
-                        "equal",
-                        KM_filter._foramt_value(flag),
-                        KM_filter._foramt_value(value)
-                    ]
-        if operator.startswith("ne"):
-            eq = operator[operator.find(" "):]
-            vals = eq.split("=")
-            flag, value = vals[0], "=".join(vals[1:])
-            return [
-                        "ne",
-                        KM_filter._foramt_value(flag),
-                        KM_filter._foramt_value(value)
-                    ]
-        elif operator.startswith("match"):
-            eq = operator[operator.find(" "):]
-            vals = eq.split("=")
-            flag, value = vals[0], "=".join(vals[1:])
-            return [
-                        "match",
-                        KM_filter._foramt_value(flag),
-                        KM_filter._foramt_value(value)
-                    ]
-        elif operator.startswith("no"):
-            flag = operator[operator.find(" "):]
-            return ["no", KM_filter._foramt_value(flag)]
-        elif operator == "and":
-            return ["and"]
-        elif operator == "or":
-            return ["or"]
-
-        # This should never happen.
-        return []
-
-    def _filter(field, oper, value, by_level=False, by_row_level=False):
-        if by_row_level:
-            field = field["level"]
-        elif by_level:
-            field = field["level"]["level"]
-        else:
-            field = field["value"]
-
-        if oper == 'equal':
-            if field == value:
-                return True
-            else:
-                return False
-        elif oper == 'ne':
-            if field != value:
-                return True
-            else:
-                return False
-        elif oper == 'match':
-            return re.search(value, field) is not None
-        elif oper == 'no':
-            if field == "":
-                return True
-            else:
-                return False
-
-    def _by_level(field):
-        """Check the search is for content or checking result.
-
-        Args:
-            field (str): if ended with ".level" means search for checking result.
-            otherwise for content.
-
-        Returns:
-            str, bool, bool: field, check field level, check row level.
-        """
-        if field.endswith(".level"):
-            field = field[:len(".level")-1]
-            if field == "level":
-                return field, True, True
-            else:
-                return field, True, False
-
-        return field, False, False
-
-    def _equal(field, value, df):
-        field, by_level, by_row_level = KM_filter._by_level(field)
-        return df.loc[df[f"{field}"].apply(
-                                            KM_filter._filter,
-                                            oper='equal',
-                                            value=value,
-                                            by_level=by_level,
-                                            by_row_level=by_row_level
-                                            )]
-
-    def _ne(field, value, df):
-        field, by_level, by_row_level = KM_filter._by_level(field)
-        return df.loc[df[f"{field}"].apply(
-                                            KM_filter._filter,
-                                            oper='ne',
-                                            value=value,
-                                            by_level=by_level,
-                                            by_row_level=by_row_level
-                                            )]
-
-    def _match(field, value, df):
-        return df.loc[df[f"{field}"].apply(
-                                            KM_filter._filter,
-                                            oper='match',
-                                            value=value
-                                            )]
-
-    def _no(field, df):
-        return df.loc[df[f"{field}"].apply(
-                                            KM_filter._filter,
-                                            oper='no',
-                                            value=""
-                                            )]
-
-    def _or(lval, rval):
-        pd.merge(lval, rval, how="outer")
-
-    def _and(lval, rval):
-        pd.merge(lval, rval, how="inner")
-
-    def process(self):
-        """
-        Rules (operation: eq, ne, nil, match): 
-         1. Operate with the original df if it's an operation.
-         2. Remove the operation once it's been used by 'and' or 'or' and save the result (dataframe) by rewriting the value of 'and' or 'or'
-         3. if the 'and' or 'or' is the last one but still have others in front, use it to do with the rest from end to front.
-        """
-
-        def _last_oper(procs):
-            for i in range(len(procs) - 1, -1, -1):
-                if procs[i] != "processed":
-                    return i
-            # This should never happend
-            return -1
-
-        last_oper = ""
-        proc_lst = []
-        opers = self._operators.copy()
-        for i in range(0, len(opers)):
-            oper = KM_filter._split_operator(opers[i])
-            if oper[0] == "equal":
-                df = KM_filter._equal(oper[1], oper[2], self.data)
-                proc_lst.append(df)
-            elif oper[0] == "ne":
-                df = KM_filter._ne(oper[1], oper[2], self.data)
-                proc_lst.append(df)
-            elif oper[0] == "match":
-                df = KM_filter._match(oper[1], oper[2], self.data)
-                proc_lst.append(df)
-            elif oper[0] == "no":
-                df = KM_filter._no(oper[1], self.data)
-                proc_lst.append(df)
-            elif oper[0] == "and":
-                last_oper = oper[0]
-                val_idx = _last_oper(proc_lst)
-                lval = proc_lst[val_idx]
-                proc_lst[val_idx] = "processed"
-                val_idx = _last_oper(proc_lst)
-                rval = proc_lst[val_idx]
-                proc_lst[val_idx] = "processed"
-                df = KM_filter._and(lval, rval)
-                proc_lst.append(df)
-            elif oper[0] == "or":
-                last_oper = oper[0]
-                val_idx = _last_oper(proc_lst)
-                lval = proc_lst[val_idx]
-                proc_lst[val_idx] = "processed"
-                val_idx = _last_oper(proc_lst)
-                rval = proc_lst[val_idx]
-                proc_lst[val_idx] = "processed"
-                df = KM_filter._or(lval, rval)
-                proc_lst.append(df)
-
-            last_val_idx = len(proc_lst) - 1
-            last_val = proc_lst[last_val_idx]
-            for i in range(len(proc_lst)-2, -1 , -1):
-                if proc_lst[i] != "processed":
-                    val_idx = _last_oper(proc_lst[:len(proc_lst)-2])
-                    val = proc_lst[val_idx]
-                    proc_lst[val_idx] = "processed"
-                    if last_oper == "and":
-                        proc_lst[last_val_idx] = KM_filter._and(last_val, val)
-                    elif last_oper == "or":
-                        proc_lst[last_val_idx] = KM_filter._or(last_val, val)
-
-        return proc_lst[last_val_idx]
+    return data[mask].reset_index(drop=True)

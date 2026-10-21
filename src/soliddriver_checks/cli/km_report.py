@@ -130,7 +130,7 @@ class KMReporter:
             f.write(kms_buffer)
 
     def to_json(self, sys_info, df_format, filter, file):
-        buffer = kms_to_json(df_format)
+        buffer = kms_to_json(df_format, filter)
 
         # TODO: add sys_info to json output.
         with open(file, "w") as fp:
