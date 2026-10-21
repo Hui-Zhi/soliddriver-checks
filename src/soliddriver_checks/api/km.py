@@ -1,4 +1,5 @@
 import os
+import shlex
 import pandas as pd
 import json
 from ..config import SDCConf
@@ -41,9 +42,9 @@ class KMAnalysis:
         self._valid_licenses = [i.get("name", "") for i in self._valid_licenses]
 
     def kms_analysis(self, kms):
-        row_level = []
         df = pd.DataFrame(columns=KM_COLUMNS)
         for filename in kms:
+            row_level = []
             lev_name, name = self._km_module_name_analysis(
                 kms[filename].get("name", "")
             )
@@ -97,7 +98,7 @@ class KMAnalysis:
 
     def _km_filename_analysis(self, filename, wu):
         lev = KMEvaluation.PASS
-        if not filename.startswith("/lib/modules"):
+        if not filename.startswith(("/lib/modules/", "/usr/lib/modules/")):
             lev = KMEvaluation.WARNING
 
         if wu != 0:  # under weak-updates folder, and have issues.
@@ -148,7 +149,7 @@ class KMAnalysis:
 
     def _km_kmp_analysis(self, kmp):
         if kmp is None:
-            return KMEvaluation.PASS.to_json(), {"name": "", "signature": ""}
+            return KMEvaluation.PASS.to_json(), ""
 
         name = kmp["name"]
         signature = kmp["signature"]
@@ -168,13 +169,46 @@ class KMReader:
         output = ""
         step = 300
         for i in range(0, files_no, step):
-            curr_slip = step
-            if i + step > files_no:
-                curr_slip = files_no - i
-            str_files = " ".join(files[i : i + curr_slip])
+            str_files = " ".join(shlex.quote(f) for f in files[i : i + step])
             output += run_cmd(cmd % str_files)
 
         return output
+
+    @staticmethod
+    def _canonical(path):
+        # resolve directory symlinks (e.g. /lib -> /usr/lib) like "rpm -qf" does,
+        # but not the file itself, so weak-updates links stay unowned.
+        return os.path.join(os.path.realpath(os.path.dirname(path)), os.path.basename(path))
+
+    def _get_kms_owner(self):
+        """Map every kernel module file in the rpm database to its package."""
+        output = run_cmd(
+            "rpm -qa --qf '[%{FILENAMES}\\t%{=NAME}-%{=VERSION}-%{=RELEASE}.%{=ARCH}\\n]'"
+            " | grep -E '\\.(ko|ko\\.xz|ko\\.zst)\\s'"
+        )
+        owners = {}
+        for line in output.splitlines():
+            file, sep, pkg = line.partition("\t")
+            if sep:
+                owners[self._canonical(file)] = pkg
+
+        return owners
+
+    def _get_kmps_signature(self):
+        """Map every installed package to its signature, "" if unsigned."""
+        # same expression "rpm -q --info" uses for its "Signature" line
+        sig = "%|DSAHEADER?{%{DSAHEADER:pgpsig}}:{%|RSAHEADER?{%{RSAHEADER:pgpsig}}:{(none)}|}|"
+        output = run_cmd(
+            "rpm -qa --qf '%%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}\\t%s\\n'" % sig
+        )
+        signatures = {}
+        for line in output.splitlines():
+            pkg, sep, signature = line.partition("\t")
+            if sep:
+                signature = signature.strip()
+                signatures[pkg] = "" if signature == "(none)" else signature
+
+        return signatures
 
     def get_all_modinfo(self):
         running_kms = run_cmd(
@@ -186,58 +220,55 @@ class KMReader:
             file for file in running_kms if not file.startswith("modinfo: ERROR:")
         ]
         lm_kms = run_cmd(
-            'find /lib/modules/ -regex ".*\.\(ko\|ko.xz\|ko.zst\)$"'
+            r'find /lib/modules/ -regex ".*\.\(ko\|ko.xz\|ko.zst\)$"'
         ).splitlines()
 
-        files = list(set(running_kms + lm_kms))
-        # we don't need the entire signature, so add grep to ignore the details in other lines.
-        kms_info = self._split_cmd_args(
-            files, '/usr/sbin/modinfo %s | grep -E "^([a-z]|[A-Z])" 2>&1'
-        )
-        kms_info = kms_info.split("filename:")
-        if len(kms_info) == 0:
+        files = sorted(set(running_kms + lm_kms))
+        if len(files) == 0:
             return {}
 
+        # we don't need the entire signature, so add grep to ignore the details in other lines.
+        # modinfo prints nothing for a broken link, so key the output by its
+        # "filename:" line instead of relying on the order of files.
+        modinfo = self._split_cmd_args(
+            files, '/usr/sbin/modinfo %s 2>/dev/null | grep -E "^([a-z]|[A-Z])"'
+        )
         kms = {}
-        kmps = self._split_cmd_args(files, "rpm -qf %s")
-        kmps = kmps.splitlines()
-        kmps_sig_pair = self._get_kmps_signature(kmps)
-        # Here's something needs to be take care of if you split all the modinfo output by "filename",
-        # If the kernel module is an invalid link, the output is:
-        # modinfo: ERROR: Module invalid-link.ko not found.
-        # If the kernel module is not a link but a broken kernel module, the output is:
-        # filename:       /full/path/to/broken.ko
-        # modinfo: ERROR: could not get modinfo from 'broken': Invalid argument
-        # so if you want to match the KMP search index with the modinfo output index, you have to
-        # take care of above. This is what I am doing.
-        kmp_index = 0
-        for km_info in kms_info[1:]:  # first one is empty.
-            lines = km_info.splitlines()
-            info = {}
-            filename = lines[0].strip()
-            for line in lines[
-                1:
-            ]:  # first line is filename, and filename is the key for info.
-                vs = line.split(":")
-                k, v = vs[0].strip(), ":".join(vs[1:]).strip()
-                if "modinfo" == k:  # invalid kernel module found
-                    if "not found." in v:  # invalid kernel module link found
-                        file = files[
-                            kmp_index
-                        ]  # the full file path only can be found in files. The orders are the same.
-                        kmps[file]["rpm"] = {"name": kmps[kmp_index], "signature": ""}
-                        kmp_index += 1
-                elif info.get(k, None) is not None:  # if already exist
-                    info[k] = info[k] + "\n" + v
-                else:
-                    info[k] = v
-            kms[filename] = info
+        info = None
+        for line in modinfo.splitlines():
+            k, sep, v = line.partition(":")
+            if not sep:
+                continue
+            k, v = k.strip(), v.strip()
+            if k == "filename":
+                info = kms.setdefault(v, {})
+            elif info is None:
+                continue
+            elif k in info:  # if already exist
+                info[k] = info[k] + "\n" + v
+            else:
+                info[k] = v
+
+        for file in files:  # broken modules or links still need to be reported
+            kms.setdefault(file, {})
+
+        owners = self._get_kms_owner()
+        signatures = self._get_kmps_signature()
+        for filename in kms:
             kms[filename]["running"] = filename in running_kms
-            kms[filename]["kmp"] = {
-                "name": kmps[kmp_index],
-                "signature": kmps_sig_pair.get(kmps[kmp_index], ""),
-            }
-            kmp_index += 1
+            pkg = owners.get(self._canonical(filename))
+            if pkg is None:  # weak-updates links belong to the package of their target
+                pkg = owners.get(os.path.realpath(filename))
+            if pkg is None:
+                kms[filename]["kmp"] = {
+                    "name": "file %s is not owned by any package" % filename,
+                    "signature": "",
+                }
+            else:
+                kms[filename]["kmp"] = {
+                    "name": pkg,
+                    "signature": signatures.get(pkg, ""),
+                }
 
         self._check_weak_links(kms)
 
@@ -246,30 +277,9 @@ class KMReader:
     def _check_weak_links(self, kms):
         pkg_path = os.path.dirname(__file__)
         script = f"{pkg_path}/utils/scripts/check-links.sh"
-        j_links = run_cmd(script)
+        j_links = run_cmd("bash %s" % shlex.quote(script))
         links = json.loads(j_links)
         for km in links["weak-updates"]:
             filename = km.get("km", None)
-            if filename is not None:
+            if filename in kms:
                 kms[filename]["weak-updates"] = km.get("status", 0)
-
-    def _get_kmps_signature(self, kmps):
-        uniq_kmps = set(kmps)
-        invalid_kmps = []
-        for kmp in uniq_kmps:
-            if kmp.endswith("is not owned by any package"):
-                invalid_kmps.append(kmp)
-        for ik in invalid_kmps:
-            uniq_kmps.remove(ik)
-        # example: Signature   : RSA/SHA256, Wed 12 Oct 2022 06:57:49 PM CST, Key ID 70af9e8139db7c82
-        signatures = run_cmd(
-            f'rpm -q --info {" ".join(uniq_kmps)} | grep -E "^Signature"'
-        ).splitlines()
-
-        kmp_sig_pairs = {}
-        uniq_kmps = list(uniq_kmps)
-        for i in range(0, len(uniq_kmps)):
-            kmp_sig_pairs[uniq_kmps[i]] = signatures[i].split(":")[1:]
-
-        return kmp_sig_pairs
-

@@ -1,4 +1,5 @@
 from pathlib import Path
+import shlex
 import pandas as pd
 import re
 from collections import namedtuple
@@ -96,9 +97,11 @@ class KMPAnalysis:
         ana_level.append(path_lev["value"])
         ven_lev, vendor_anls = self._kmp_vendor_analysis(data["vendor"])
         ana_level.append(ven_lev["value"])
-        sig_lev, sig_anls = self._kmp_vendor_analysis(data["signature"])
-        ana_level.append(ven_lev["value"])
-        lic_lev, license_anls = self._licenses_analysis([data["license"]])
+        sig_lev, sig_anls = self._kmp_signature_analysis(data["signature"])
+        ana_level.append(sig_lev["value"])
+        lic_lev, license_anls = self._licenses_analysis(
+            self._split_license_expression(data["license"])
+        )
         ana_level.append(lic_lev["value"])
         wm2_lev, wm2_invoked_anls = self._kmp_wm2_invoked_analysis(
             data["wm2_invoked"], data["name"]
@@ -134,20 +137,25 @@ class KMPAnalysis:
         return KMPEvaluation.PASS.to_json(), vendor
 
     def _kmp_signature_analysis(self, signature):
-        if signature == "" or signature is None:
+        if signature is None or signature.strip() in ("", "(none)"):
             return KMPEvaluation.WARNING.to_json(), "Signature should not be empty"
 
         return KMPEvaluation.PASS.to_json(), signature
+
+    @staticmethod
+    def _split_license_expression(license):
+        # RPM License tags are SPDX expressions, e.g. "GPL-2.0-only AND GPL-2.0-or-later"
+        # "WITH <exception>" only adds an exception to the license before it.
+        license = re.sub(r"\s+WITH\s+\S+", "", license.replace("(", " ").replace(")", " "))
+        parts = re.split(r"\s+(?:AND|OR)\s+", license)
+        return [p.strip() for p in parts if p.strip()] or [""]
 
     def _licenses_analysis(self, licenses: list):
         if len(licenses) < 1 or (len(licenses) == 1 and licenses[0] == ""):
             return KMPEvaluation.WARNING.to_json(), "No License found in KMP"
 
-        invlics = licenses.copy()
-        for vlic in self._valid_licenses:
-            for lic in invlics:
-                if lic == vlic.get("name"):
-                    invlics.remove(lic)
+        valid = [vlic.get("name") for vlic in self._valid_licenses]
+        invlics = [lic for lic in licenses if lic not in valid]
 
         if len(invlics) == 0:
             return KMPEvaluation.PASS.to_json(), " ".join(licenses)
@@ -192,7 +200,7 @@ class KMPAnalysis:
             ana_level.append(eval["value"])
 
             eval, msg = self._km_supported_analysis(km_info.get(km_path)["supported"])
-            if eval["value"] != KMPEvaluation.PASS:
+            if eval["value"] != int(KMPEvaluation.PASS):
                 msg = f"{Path(km_path).name}: {msg}"
             km_analysis[km_path]["supported"] = {"level": eval, "value": msg}
             ana_level.append(eval["value"])
@@ -235,7 +243,7 @@ class KMPAnalysis:
 
             if req.checksum != chksum:
                 syms["checksum-mismatch"].append(
-                    "rpm checksum: %s, driver checksum: %s" % (chksum, req.checksum)
+                    "rpm checksum: %s, driver checksum: %s" % (req.checksum, chksum)
                 )
 
         unfounded = len(syms["unfound"])
@@ -313,6 +321,12 @@ class KMPAnalysis:
         if len(values) == 1 and values[0] == "external":
             return KMPEvaluation.PASS.to_json(), ""
 
+        if len(values) == 1:
+            return (
+                KMPEvaluation.ERROR.to_json(),
+                "'supported' flag is \"%s\", it should be \"external\"" % values[0],
+            )
+
         return (
             KMPEvaluation.ERROR.to_json(),
             "Multiple values found, they're %s" % " ".join(values),
@@ -321,7 +335,7 @@ class KMPAnalysis:
 
 class KMPReader:
     def get_all_kmp_files(self, path):
-        cmd = "find %s -regextype sed -regex '.*-kmp-.*\.rpm$'" % path
+        cmd = r"find %s -regextype sed -regex '.*-kmp-.*\.rpm$'" % shlex.quote(str(path))
         kmps = run_cmd(cmd)
 
         return kmps.splitlines()
@@ -346,48 +360,54 @@ class KMPReader:
         }
 
     def _get_km_symbols(self, path):
-        cmd = "/usr/sbin/modprobe --dump-modversions %s" % path
+        cmd = "/usr/sbin/modprobe --dump-modversions %s" % shlex.quote(str(path))
         symbols = run_cmd(cmd)
 
         lines = symbols.splitlines()
         symver = {}
         for line in lines:
             kv = line.split()
-            symver[kv[1]] = kv[0]
+            if len(kv) >= 2:
+                symver[kv[1]] = kv[0]
 
         return symver
 
     def _get_km_supported_flag(self, path):
-        cmd = "/usr/sbin/modinfo --field=supported %s" % path
+        cmd = "/usr/sbin/modinfo --field=supported %s" % shlex.quote(str(path))
         values = run_cmd(cmd)
 
         return values.splitlines()
 
     def _get_km_license(self, path):
-        cmd = "/usr/sbin/modinfo --field=license %s" % path
+        cmd = "/usr/sbin/modinfo --field=license %s" % shlex.quote(str(path))
         license = run_cmd(cmd)
 
         return license.splitlines()
 
     def _get_km_signature(self, path):
-        cmd = "/usr/sbin/modinfo --field=signature %s" % path
+        cmd = "/usr/sbin/modinfo --field=signature %s" % shlex.quote(str(path))
         signature = run_cmd(cmd)
 
         return signature
 
     def _get_km_alias(self, path):
-        alias = run_cmd("/usr/sbin/modinfo --field=alias %s | grep pci:" % path)
+        alias = run_cmd(
+            "/usr/sbin/modinfo --field=alias %s | grep pci:" % shlex.quote(str(path))
+        )
         return alias.splitlines()
 
     def _get_km_all_info(self, rpm_path):
         tmp = tempfile.TemporaryDirectory()
 
-        command = "rpm2cpio %s | cpio -idmv -D %s" % (rpm_path, tmp.name)
+        command = "rpm2cpio %s | cpio -idmv -D %s" % (
+            shlex.quote(str(rpm_path)),
+            shlex.quote(tmp.name),
+        )
         run_cmd(command)
 
         rpm_dir = Path(tmp.name)
         files = tuple(rpm_dir.rglob("*.*"))
-        kms = [i for i in files if re.search(r"\.(ko|ko\.xz)$", str(i))]
+        kms = [i for i in files if re.search(r"\.(ko|ko\.xz|ko\.zst)$", str(i))]
         result = dict()
 
         if len(kms) < 1:
@@ -428,7 +448,7 @@ class KMPReader:
         return True, []
 
     def _get_kmp_modalias(self, path):
-        cmd = "".join("rpm -q --nosignature --supplements %s" % path)
+        cmd = "rpm -q --nosignature --supplements %s" % shlex.quote(str(path))
         supplements = run_cmd(cmd)
 
         success, err_info = self._check_kmp_manifest(supplements)
@@ -460,7 +480,7 @@ class KMPReader:
         return alias_re
 
     def _check_kmp_wm2_invoked(self, path):
-        cmd = "".join("rpm -q --nosignature --scripts %s" % path)
+        cmd = "rpm -q --nosignature --scripts %s" % shlex.quote(str(path))
         scripts = run_cmd(cmd)
 
         success, err_info = self._check_kmp_manifest(scripts)
@@ -468,15 +488,19 @@ class KMPReader:
             print(err_info)
             return False
 
+        # newer KMPs run weak-modules2 through the kernel-scriptlets (kmp-post, inkmp-post, ...)
         lines = scripts.splitlines()
         for line in lines:
-            if "/usr/lib/module-init-tools/weak-modules2" in line:
+            if (
+                "/usr/lib/module-init-tools/weak-modules2" in line
+                or "/usr/lib/module-init-tools/kernel-scriptlets/" in line
+            ):
                 return True
 
         return False
 
     def _get_kmp_requires(self, path):
-        cmd = "".join("rpm -q --nosignature --requires %s" % path)
+        cmd = "rpm -q --nosignature --requires %s" % shlex.quote(str(path))
         requires = run_cmd(cmd)
 
         KernelSym = namedtuple("KernelSym", "kernel_flavor symbol checksum")
@@ -500,7 +524,7 @@ class KMPReader:
         return mod_reqs
 
     def _get_kmp_info(self, path):
-        cmd = "".join("rpm -q --nosignature --info %s" % path)
+        cmd = "rpm -q --nosignature --info %s" % shlex.quote(str(path))
         info = run_cmd(cmd)
 
         success, err_info = self._check_kmp_manifest(info)

@@ -119,7 +119,7 @@ class KMReporter:
         kms_buffer = km_tmpl.render(
             version=get_version(),
             timestamp=generate_timestamp(),
-            sysinfo=sys_info,
+            sys_info=sys_info,
             kms_in_total=kms_in_total,
             external_kms_in_total=external_kms_in_total,
             failed_kms_in_total=failed_kms_in_total,

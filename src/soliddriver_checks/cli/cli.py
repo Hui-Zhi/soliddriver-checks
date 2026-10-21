@@ -76,27 +76,12 @@ def km_export(exporter, label, check_result, filter, out_format, dst):
         exporter.to_json(label, check_result, filter, dst)
 
 
-def dst_is_ok(dst, out_format):
-    def check(dst):
-        if dst.is_file():
-            if not os.access(dst, os.W_OK):
-                raise Exception("Cannot write to %s" % dst)
-            return click.confirm("Overwrite %s?" % dst)
-        return True
-
-    if out_format == "all":
-        for format_type, ext in FORMAT_TYPES.items():
-            if ext is None:
-                continue
-            dst = dst.parent / (dst.name + ext)
-            if not check(dst):
-                return False
-        return True
-
-    else:
-        ext = FORMAT_TYPES[out_format]
-        dst = dst.parent / (dst.name + ext)
-        return check(dst)
+def dst_is_ok(dst):
+    if dst.is_file():
+        if not os.access(dst, os.W_OK):
+            raise click.FileError(str(dst), hint="permission denied")
+        return click.confirm("Overwrite %s?" % dst)
+    return True
 
 
 @click.command()
@@ -121,14 +106,10 @@ def dst_is_ok(dst, out_format):
     "--output",
     "-o",
     default=".",
-    help="Output destination. Target can be filename or point "
-    "existing directory "
-    "If directory, files will be placed in the directory "
-    "using a autmatically generated filename. If target "
-    "is not an existing directory, file name is assumed "
-    "and output files will use the path and file name "
-    "specified. In either case, the file extension will "
-    "be automatically appended matching on the output format",
+    help="Output destination. If it is an existing directory, or ends "
+    "with '/', the report is written there as check_result.<format>. "
+    "Otherwise it is used as the file name. The extension matching "
+    "the output format is added if it is missing.",
 )
 @click.option("--version", is_flag=True)
 def run(check_target, output, out_format, filter, version):
@@ -150,34 +131,39 @@ def run(check_target, output, out_format, filter, version):
 
     target = Check_Target(check_target)
 
-    if filter and (target.dir or target.system):
-        try:
-            check_filter(filter, KMP_COLUMNS if target.dir else KM_COLUMNS)
-        except ValueError as e:
-            raise click.BadParameter(str(e), param_hint="'--filter'")
+    if target.rpm:  # printed to the terminal, no report file.
+        df = analysis.kmp_analysis(target.rpm)
+        single_kmp_output(df)
+        return
+
+    if target.dir:
+        columns = KMP_COLUMNS
+    elif target.system:
+        columns = KM_COLUMNS
+    else:
+        raise click.BadParameter(
+            "%s is not a KMP file (.rpm), a directory or \"system\"" % check_target,
+            param_hint="'CHECK_TARGET'",
+        )
+
+    try:
+        check_filter(filter, columns)
+    except ValueError as e:
+        raise click.BadParameter(str(e), param_hint="'--filter'")
 
     dst = Path(output)
     if dst.is_dir() or output.endswith("/"):
         dst = dst / "check_result"
+    dst = with_format_suffix(dst, out_format)
 
-    if not dst_is_ok(dst, out_format):
-        logger.error("Can't write to output")
+    if not dst_is_ok(dst):
+        logger.error("Not overwriting %s, nothing was checked." % dst)
         exit(1)
 
-    # try to guess format from file extension
-    if out_format is None:
-        ext_to_format = {v: k for k, v in FORMAT_TYPES.items()}
-        out_format = ext_to_format.get(dst.suffix, None)
-
-    if target.rpm:
-        df = analysis.kmp_analysis(target.rpm)
-        single_kmp_output(df)
-
-    elif target.dir:
+    if target.dir:
         df = analysis.kmps_to_dataframe(target.dir, KMPTerminalOutput(), filter)
         reporter = KMPReporter()
         kmp_export(reporter, df, out_format, dst)
-        logger.info("Check is completed! The result has been saved to %s" % dst)
 
     elif target.system:
         try:
@@ -191,6 +177,8 @@ def run(check_target, output, out_format, filter, version):
         logger.info("Retrieving kernel module data for %s" % label)
         reporter = KMReporter()
         km_export(reporter, label, None, filter, out_format, dst)
+
+    logger.info("Check is completed! The result has been saved to %s" % dst)
 
 
 if __name__ == "__main__":

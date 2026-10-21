@@ -14,8 +14,7 @@ class KMPReporter:
     def _summary(self, df):
         summary = df.copy()
         # we need to do this for unique() since unhashable type: 'dict'.
-        for i, row in summary.iterrows():
-            row["vendor"] = row["vendor"]["value"]
+        summary["vendor"] = summary["vendor"].map(lambda v: v["value"])
 
         def failed_len(col):
             counter = 0
