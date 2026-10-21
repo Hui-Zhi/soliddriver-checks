@@ -8,8 +8,6 @@ import os
 import logging
 import socket
 from pathlib import Path
-from rich.logging import RichHandler
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 from ..version import __VERSION__
 
 
@@ -142,10 +140,8 @@ def run(check_target, output, out_format, filter, version):
         print(__VERSION__)
         exit()
 
-    FORMAT = "%(asctime)-15s %(message)s"
-    logging.basicConfig(format=FORMAT, handlers=[RichHandler()])
-    logger = logging.getLogger("rich")
-    logger.setLevel(logging.INFO)
+    logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
+    logger = logging.getLogger("soliddriver-checks")
 
     target = Check_Target(check_target)
 
@@ -167,23 +163,10 @@ def run(check_target, output, out_format, filter, version):
         single_kmp_output(df)
 
     elif target.dir:
-        progress = Progress(
-            "{task.description}",
-            SpinnerColumn(),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        )
-        with progress:
-            log = KMPTerminalOutput(progress)
-            df = analysis.kmps_to_dataframe(target.dir, log, filter)
+        df = analysis.kmps_to_dataframe(target.dir, KMPTerminalOutput(), filter)
         reporter = KMPReporter()
         kmp_export(reporter, df, out_format, dst)
-        logger.info(
-            "[green]Check is completed![/]"
-            "The result has been saved to "
-            "[bold green]%s[/]" % dst,
-            extra={"markup": True},
-        )
+        logger.info("Check is completed! The result has been saved to %s" % dst)
 
     elif target.system:
         try:
