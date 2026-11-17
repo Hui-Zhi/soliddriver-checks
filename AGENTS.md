@@ -30,6 +30,12 @@ src/soliddriver_checks/
     kmp_report.py       # KMPReporter: to_html / to_json
     km_report.py        # KMReporter:  to_html / to_json
     terminal_logs.py    # per-KMP progress lines and the single-KMP table (click.style colors)
+tests/
+  run_tests.sh          # builds the container image and runs pytest in it
+  conftest.py           # fixtures: build the test KMPs, install them, scan the system
+  test_*.py             # kmp / km / cli (in the container), filter / analysis (unit)
+  data/                 # module source, spec files and build.sh for the test KMPs
+  container_env/        # Dockerfile of the development and test image
 ```
 
 Data flow: a reader gathers raw data from shell commands, the analysis class turns each field into a `(value, level)` evaluation, the results go into a pandas DataFrame, an optional filter is applied, and a reporter writes the output file.
@@ -47,11 +53,11 @@ The tool runs external Linux tools through `run_cmd` (`shell=True`): `rpm`, `rpm
 cd tests/container_env && ./build_env.sh            # builds opensuse-leap-soliddriver-checks image
 # then run the container, bind-mounting the repo at /root/source_codes
 # (see create_container_mac.sh for an example) and inside it:
-./build_install.sh                                   # pip-installs a copy of the source (Python 3.11)
+./build_install.sh                                   # pip-installs a copy of the source (Python 3.13)
 soliddriver-checks /root/rpms -f html -o /root/output_dir/
 ```
 
-The image has no kernel modules or KMPs. `docs/workflow.md` explains how to add real test data, compare against `HEAD`, and release. `docs/architecture.md` describes the components, the data model and the check flows.
+The image is openSUSE Leap 16.1 (usr-merged: `/lib` is a link to `usr/lib`) with `kernel-default` and the tools to build KMPs. `docs/workflow.md` explains the tests, manual test data, comparing against `HEAD`, and releasing. `docs/architecture.md` describes the components, the data model and the check flows.
 
 ## Development
 
@@ -60,7 +66,9 @@ pip install -e .            # Python >= 3.7
 python -m build             # sdist + wheel
 ```
 
-- **No automated test suite or CI.** Verify changes by running the CLI against real KMPs or a real system (in the container), and check both output formats if you touched a reporter. Follow the checklist in `docs/workflow.md`.
+- **Run `tests/run_tests.sh`** (pytest in the container) after every change; there is no CI. Never run the `container` tests on a real system: they install packages and write to `/lib/modules`, so they are skipped unless `SDC_TEST_CONTAINER=1`.
+- Test KMPs are built from source by `tests/data/build.sh`: every `sdc-<scenario>` package differs from `sdc-good` in one property. A new check or scenario needs a `build` line there and its expected grades in the `EXPECTED` tables of `tests/test_kmp.py` / `tests/test_km.py`. Grading rules that no package can trigger go in `tests/test_analysis.py`.
+- Also verify by hand when output changes: run the CLI and check both output formats if you touched a reporter. Follow the checklist in `docs/workflow.md`.
 - No linter or formatter is configured. The code is roughly Black-formatted (double quotes, 88 cols), so match it.
 - Non-Python files that ship in the package must be covered by `MANIFEST.in` (currently `config/` and `api/utils/scripts/`). Load them relative to the package directory, as `config.py` does.
 

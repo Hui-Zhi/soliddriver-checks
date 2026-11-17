@@ -14,7 +14,7 @@ How to set up a development environment, test a change against real packages, ad
   git merge upstream/main
   ```
 
-There is no CI. Every pull request is verified by hand, as described below.
+There is no CI. Run the test suite before every pull request, and verify the change by hand as described below.
 
 ## Development environment
 
@@ -29,7 +29,7 @@ soliddriver-checks --help
 
 ### On macOS (or any other OS): the development container
 
-`tests/container_env/` builds an openSUSE Leap 15.6 image with Python 3.11 and the required tools:
+`tests/container_env/` builds an openSUSE Leap 16.1 image with Python 3.13, the required tools, a kernel (`kernel-default`), the tools to build KMPs, and pytest:
 
 ```sh
 cd tests/container_env
@@ -59,68 +59,91 @@ After the first install, you can run the source tree directly without reinstalli
 
 ```sh
 cd /tmp
-PYTHONPATH=/root/source_codes/src python3.11 -m soliddriver_checks.cli.cli /path/to/kmps -f html -o report
+PYTHONPATH=/root/source_codes/src python3.13 -m soliddriver_checks.cli.cli /path/to/kmps -f html -o report
 ```
 
-## Test data
+## Running the tests
 
-The development image has no kernel modules and no KMPs. Add what the change needs.
+```sh
+tests/run_tests.sh                 # the whole suite, about a minute once the image is built
+tests/run_tests.sh -k filter -v    # arguments are passed to pytest
+```
 
-**Real KMPs** from the openSUSE repositories:
+The script builds the image, mounts the repository read-only, and runs pytest in a throw-away container. The tests test the source tree (`src/`), not the installed copy.
+
+| File | What it tests |
+| --- | --- |
+| `tests/test_kmp.py` | KMP checks against the test KMPs: the grade of every column for every package, the messages, paths with spaces, empty directories |
+| `tests/test_km.py` | Kernel module checks: installs test KMPs and broken modules, then checks the grade of every column for every module |
+| `tests/test_cli.py` | The command: targets, `--format`, `--output`, the overwrite prompt, `--filter`, errors and exit codes |
+| `tests/test_filter.py` | The filter language, on hand-made rows |
+| `tests/test_analysis.py` | The grading rules, on hand-made input, including cases no package can produce (a module outside `/lib/modules`, a KMP without a license) |
+
+Tests that build packages, install them or scan the system are marked `container`. They only run where `SDC_TEST_CONTAINER=1`, which the image sets, because they write to `/lib/modules` and the RPM database. Elsewhere they are skipped.
+
+### Test packages
+
+`tests/data/build.sh OUTDIR` builds the test KMPs from source. The tests run it once per session.
+
+- `tests/data/module/` is one kernel module source. Its license, `supported` flags and PCI ID are set on the `make` command line (see `Kbuild`).
+- `tests/data/specs/sdc-kmp.spec` builds a KMP the way SUSE requires, with the `kernel_module_package` macro.
+- `tests/data/specs/sdc-manual.spec` packages a module by hand, without scriptlets, `ksym()` requirements or `modalias()` supplements.
+
+`build.sh` builds both specs several times with different `--define` options, so each package (`sdc-<scenario>-kmp-default`) differs from `sdc-good` in one property. Only `sdc-good` is a signed RPM with a signed module; `build.sh` creates throw-away keys for both.
+
+To add a scenario, add a `build` line to `build.sh` (and a `--define` option to a spec if needed), add the package to `PACKAGES` in `tests/conftest.py`, and add its expected grades to `EXPECTED` in `tests/test_kmp.py`. To install it for the kernel module tests, also add it to `INSTALLED` and to `EXPECTED` in `tests/test_km.py`.
+
+## Manual test data
+
+For checks by hand, build the test packages in the container:
+
+```sh
+/root/source_codes/tests/data/build.sh /kmps
+soliddriver-checks /kmps -f html -o /tmp/kmps
+```
+
+Real KMPs from the openSUSE repositories are also useful, because they come from a real build service:
 
 ```sh
 zypper se -t package -- -kmp-default                 # list available KMPs
-zypper --non-interactive download vhba-kmp-default v4l2loopback-kmp-default xtables-addons-kmp-default
-mkdir -p /kmps && find /var/cache/zypp/packages -name '*-kmp-*.rpm' -exec cp {} /kmps/ \;
+zypper --non-interactive download <package>...
+mkdir -p /kmps-real && find /var/cache/zypp/packages -name '*-kmp-*.rpm' -exec cp {} /kmps-real/ \;
 ```
 
-**Special cases** worth covering:
+For the `system` target, the image already has `kernel-default`. Install test KMPs without their scriptlets, which would regenerate the initrd, and add broken modules:
 
 ```sh
-# an unsigned KMP
-cp /kmps/vhba-kmp-*.rpm /kmps/unsigned-kmp-default-1-1.rpm
-rpmsign --delsign /kmps/unsigned-kmp-default-1-1.rpm
-
-# a path with a space
-mkdir -p "/kmps/with space" && cp /kmps/vhba-kmp-*.rpm "/kmps/with space/vhba copy-kmp-default.rpm"
-
-# an empty directory
-mkdir -p /kmps-empty
-```
-
-**A system to check** (`system` target):
-
-```sh
-zypper --non-interactive in --no-recommends kernel-default   # populates /lib/modules
-rpm -i --nodeps /kmps/vhba-kmp-*.rpm /kmps/v4l2loopback-kmp-*.rpm   # third-party modules + weak-updates links
+rpm -i --nodeps --noscripts /kmps/sdc-good-kmp-*.rpm /kmps/sdc-unsigned-kmp-*.rpm
 
 KV=$(ls /lib/modules | sort | tail -1)
 mkdir -p /lib/modules/$KV/extra /lib/modules/$KV/weak-updates
 # a module not owned by any package
-cp "$(find /lib/modules/$KV/kernel -name '*.ko*' | head -1)" /lib/modules/$KV/extra/orphan.ko.zst
+cp /lib/modules/$KV/updates/sdc_unsigned.ko /lib/modules/$KV/extra/orphan.ko
 # a broken weak-updates link, and a regular file where a link is expected
 ln -s /lib/modules/$KV/extra/does-not-exist.ko /lib/modules/$KV/weak-updates/broken.ko
-cp "$(find /lib/modules/$KV/kernel -name '*.ko*' | sed -n 2p)" /lib/modules/$KV/weak-updates/notalink.ko.zst
+cp /lib/modules/$KV/updates/sdc_unsigned.ko /lib/modules/$KV/weak-updates/notalink.ko
 ```
 
 In a container, `/proc/modules` belongs to the host kernel (on macOS, Docker's VM). So the `running` column means nothing there, and filters on `"running" = "True"` match nothing.
 
 ## Verifying a change
 
-1. **Syntax**: nothing must warn when compiled (Python turns some warnings into errors in later versions):
+1. **Tests**: `tests/run_tests.sh` must pass. Add or change tests for the behaviour you changed.
+
+2. **Syntax**: nothing must warn when compiled (Python turns some warnings into errors in later versions):
 
    ```sh
    for f in $(git ls-files 'src/*.py'); do python3 -W error::SyntaxWarning -m py_compile "$f"; done
    ```
 
-2. **Every target you touched, in every format.**
+3. **Every target you touched, in every format.**
    - Directory: `-f html` and `-f json`.
    - `system`: `-f html` and `-f json`.
    - Single `.rpm`: terminal output.
 
    Include the empty directory, and at least one `--filter`.
 
-3. **Compare with the code before your change.** Check out `HEAD` next to your working tree and run both on the same data:
+4. **Compare with the code before your change.** Check out `HEAD` next to your working tree and run both on the same data:
 
    ```sh
    git worktree add /tmp/sdc-head HEAD
@@ -134,19 +157,19 @@ In a container, `/proc/modules` belongs to the host kernel (on macOS, Docker's V
 
    ```sh
    cd /tmp
-   PYTHONPATH=/head/src              python3.11 -m soliddriver_checks.cli.cli /kmps -f json -o before.json
-   PYTHONPATH=/root/source_codes/src python3.11 -m soliddriver_checks.cli.cli /kmps -f json -o after.json
+   PYTHONPATH=/head/src              python3.13 -m soliddriver_checks.cli.cli /kmps -f json -o before.json
+   PYTHONPATH=/root/source_codes/src python3.13 -m soliddriver_checks.cli.cli /kmps -f json -o after.json
    ```
 
-   If the old code fails with `ModuleNotFoundError`, it needs packages the current version dropped. Install them in the container with `python3.11 -m pip install <package>`. For example, versions up to 3.0.9 need `openpyxl rich requests bottle`.
+   If the old code fails with `ModuleNotFoundError`, it needs packages the current version dropped. Install them in the container with `python3.13 -m pip install <package>`. For example, versions up to 3.0.9 need `openpyxl rich requests bottle`.
 
    Remove the worktree afterwards with `git worktree remove /tmp/sdc-head`.
 
    Then diff the grades per row. The JSON report is easy to load with `json.load()`. Every difference should be one you intended.
 
-4. **Open the HTML reports** in a browser if you touched a reporter or a template.
+5. **Open the HTML reports** in a browser if you touched a reporter or a template.
 
-5. **Run the README examples** if you changed options, filter behaviour or output.
+6. **Run the README examples** if you changed options, filter behaviour or output.
 
 Things to know when scripting runs:
 
@@ -167,6 +190,7 @@ A check runs through every layer, so a new column touches several files. Use an 
 | JSON report | automatic | automatic |
 | Filter | automatic (the key is the column name) | automatic |
 | User docs | README: the check table, the key list under [Filtering results](../README.md#filtering-results---filter) | same |
+| Tests | A scenario in `tests/data/build.sh`, the column in `COLUMNS` and `EXPECTED` in `tests/test_kmp.py`, the grading rules in `tests/test_analysis.py` | same, in `tests/test_km.py` |
 
 Rules that apply to every change:
 
