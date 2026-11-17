@@ -1,0 +1,23 @@
+# Build sdc_test.c as the module $(SDC_NAME).ko with the metadata given on the
+# make command line:
+#   SDC_NAME        module name (required)
+#   SDC_LICENSE     MODULE_LICENSE() value, default "GPL"
+#   SDC_SUPPORTED   value of the "supported" flag, none if empty
+#   SDC_SUPPORTED2  value of a second "supported" flag, none if empty
+#   SDC_PCI_ID      PCI vendor:device ID of the device table, default 1af4:10ff
+
+SDC_LICENSE ?= GPL
+SDC_PCI_ID ?= 1af4:10ff
+
+obj-m := $(SDC_NAME).o
+$(SDC_NAME)-y := sdc_test.o
+
+ccflags-y += -DSDC_LICENSE='"$(SDC_LICENSE)"'
+ccflags-y += -DSDC_PCI_VENDOR=0x$(word 1,$(subst :, ,$(SDC_PCI_ID)))
+ccflags-y += -DSDC_PCI_DEVICE=0x$(word 2,$(subst :, ,$(SDC_PCI_ID)))
+ifneq ($(SDC_SUPPORTED),)
+ccflags-y += -DSDC_SUPPORTED='"$(SDC_SUPPORTED)"'
+endif
+ifneq ($(SDC_SUPPORTED2),)
+ccflags-y += -DSDC_SUPPORTED2='"$(SDC_SUPPORTED2)"'
+endif
